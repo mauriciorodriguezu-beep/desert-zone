@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1a">
+<title>Tower Defense Desert Zone</title>
+<link rel="icon" href="iconos/icono.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="iconos/icono-32.png">
+<link rel="apple-touch-icon" href="iconos/icono-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Desert Zone">
+<style>
+  :root {
+    --fondo: #070a13; --panel: #0d1220; --caja: #111a2c; --linea: #1e2d4a;
+    --texto: #e2e8f0; --tenue: #7d93b2; --oro: #f0c040; --rojo: #ef5a4a; --azul: #6aa9e0; --verde: #46c08a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0; background: var(--fondo); color: var(--texto);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation; overflow: hidden;
+  }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+  button:disabled { cursor: default; }
+
+  #app {
+    position: relative; height: 100vh; height: 100dvh;
+    width: min(100vw, calc(100vh * 0.5625)); width: min(100vw, calc(100dvh * 0.5625));
+    margin: 0 auto; display: flex; flex-direction: column; background: #0a0e1a;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+
+  /* Barra superior: créditos, oleada, vidas */
+  #hud {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    height: 42px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--linea);
+    font-variant-numeric: tabular-nums;
+  }
+  .dato { display: flex; align-items: baseline; gap: 5px; }
+  .dato b { font-size: 16px; font-weight: 600; }
+  .dato span { font-size: 11px; color: var(--tenue); }
+  .dato.vidas { justify-content: flex-end; }
+  .dato.vidas b { color: var(--rojo); }
+  .dato.creditos b { color: var(--oro); }
+  #hudOleada {
+    font-size: 12px; font-weight: 600; color: var(--azul); background: #13233d;
+    border: 1px solid #2a4a7a; border-radius: 6px; padding: 4px 10px;
+  }
+
+  /* Controles de oleada */
+  #barra { display: flex; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--linea); }
+  #barra button {
+    height: 36px; border-radius: 8px; border: 1px solid var(--linea); background: var(--caja);
+    font-size: 13px; font-weight: 600; color: var(--texto);
+  }
+  #barra #btnOleada { flex: 1; background: #10301f; border-color: #1f6a44; color: #8fe0b6; }
+  #barra #btnOleada:disabled { background: var(--caja); border-color: var(--linea); color: var(--tenue); }
+  #btnVel, #btnPausa { width: 46px; }
+  #barra button.activo { background: #13233d; border-color: var(--azul); color: var(--azul); }
+
+  #mapa { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0e1a; }
+  #aviso {
+    position: absolute; left: 50%; top: 96px; transform: translateX(-50%); z-index: 3; pointer-events: none;
+    background: rgba(13, 18, 32, .92); border: 1px solid var(--linea); border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; white-space: nowrap; opacity: 0; transition: opacity .25s;
+  }
+  #aviso.ver { opacity: 1; }
+
+  /* Panel inferior */
+  #panel { background: var(--panel); border-top: 1px solid var(--linea); padding: 8px; }
+  #torres { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .torre {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    height: 58px; border-radius: 8px; border: 1px solid var(--linea); background: var(--caja);
+  }
+  .torre .tn { font-size: 11px; color: var(--tenue); }
+  .torre .tc { font-size: 12px; font-weight: 600; color: var(--oro); font-variant-numeric: tabular-nums; }
+  .torre .tenue { color: #56698a; font-weight: 400; }
+  .torre.sel { border-color: var(--azul); background: #0f1e35; box-shadow: inset 0 0 0 1px var(--azul); }
+  .torre.caro .tc { color: var(--rojo); }
+  .torre:disabled { opacity: .55; }
+
+  #info { margin-top: 8px; background: var(--caja); border: 1px solid var(--linea); border-radius: 8px; padding: 8px 10px; height: 128px; display: flex; flex-direction: column; }
+  #infoTitulo { font-size: 13px; font-weight: 600; }
+  #infoDet { font-size: 12px; color: var(--tenue); margin-top: 2px; line-height: 1.35; }
+  #infoSin { font-size: 12px; color: var(--oro); margin-top: 2px; line-height: 1.35; }
+  #acciones { display: flex; gap: 6px; margin-top: auto; }
+  #acciones button {
+    flex: 1; min-width: 0; height: 40px; border-radius: 8px; border: 1px solid var(--linea); background: #0b1220;
+    font-size: 12px; font-weight: 600; line-height: 1.15; padding: 0 6px;
+  }
+  #btnConstruir, #btnMejorar { background: #0f2a4a !important; border-color: #2a6aaa !important; color: #9cc9f2; flex: 1.6 !important; }
+  #btnVender { color: #e0a060; border-color: #6a3a0a !important; }
+  #acciones button:disabled { opacity: .5; }
+
+  /* Pantalla de inicio / final */
+  #velo {
+    position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center; background: rgba(7, 10, 19, .93);
+  }
+  #veloTitulo { font-size: 28px; font-weight: 700; letter-spacing: .02em; line-height: 1.15; margin: 0; text-wrap: balance; }
+  #veloCredito { position: absolute; left: 0; right: 0; bottom: 18px; margin: 0; font-size: 12px; color: var(--tenue); }
+  #veloSub { font-size: 13px; color: var(--tenue); margin: 0; }
+  #veloDatos { display: flex; gap: 10px; width: 100%; justify-content: center; }
+  #veloDatos div { flex: 1; max-width: 120px; background: var(--caja); border: 1px solid var(--linea); border-radius: 8px; padding: 10px 6px; }
+  #veloDatos b { display: block; font-size: 20px; color: var(--oro); font-variant-numeric: tabular-nums; }
+  #veloDatos span { font-size: 11px; color: var(--tenue); }
+  #veloDatos p { font-size: 13px; color: var(--tenue); line-height: 1.5; max-width: 280px; margin: 0; }
+  #veloBoton {
+    margin-top: 6px; height: 48px; padding: 0 36px; border-radius: 10px; font-size: 16px; font-weight: 700;
+    background: #10301f; border: 1px solid #1f6a44; color: #8fe0b6;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <div class="dato creditos"><b id="hudCreditos">0</b><span>créditos</span></div>
+    <div id="hudOleada">Oleada 0 / 10</div>
+    <div class="dato vidas"><b id="hudVidas">20</b><span>vidas</span></div>
+  </header>
+  <div id="barra">
+    <button id="btnOleada">▶ Iniciar oleada 1</button>
+    <button id="btnVel" aria-label="Velocidad">×1</button>
+    <button id="btnPausa" aria-label="Pausa">II</button>
+  </div>
+  <div id="aviso"></div>
+  <div id="mapa"></div>
+  <section id="panel">
+    <div id="torres"></div>
+    <div id="info">
+      <div id="infoTitulo"></div>
+      <div id="infoDet"></div>
+      <div id="infoSin"></div>
+      <div id="acciones">
+        <button id="btnConstruir" hidden></button>
+        <button id="btnCancelar" hidden>Cancelar</button>
+        <button id="btnMejorar" hidden></button>
+        <button id="btnPrioridad" hidden></button>
+        <button id="btnVender" hidden></button>
+      </div>
+    </div>
+  </section>
+  <div id="velo">
+    <h1 id="veloTitulo"></h1>
+    <p id="veloSub"></p>
+    <div id="veloDatos"></div>
+    <button id="veloBoton">Jugar</button>
+    <p id="veloCredito"></p>
+  </div>
+</div>
+<script src="phaser.min.js"></script>
+<script src="datos.js"></script>
+<script src="juego.js"></script>
+<script>
+  // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
+  if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+</script>
+</body>
+</html>
