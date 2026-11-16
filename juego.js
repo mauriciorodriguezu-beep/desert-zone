@@ -1133,6 +1133,9 @@
     poner($('btnVel'), 'textContent', '×' + G.vel);
     poner($('btnPausa'), 'textContent', G.pausa ? '▶' : 'II');
     $('btnPausa').classList.toggle('activo', G.pausa);
+    const enPausa = G.pausa && G.fase === 'jugando';
+    mostrar($('pausa'), enPausa);
+    if (!enPausa) desarmarReinicio();
     $('btnVel').classList.toggle('activo', G.vel > 1);
   }
 
@@ -1168,10 +1171,35 @@
     refrescarTodo();
   }
 
+  let reinicioArmado = false, tReinicio = 0;
+  function desarmarReinicio() {
+    if (!reinicioArmado) return;
+    reinicioArmado = false;
+    clearTimeout(tReinicio);
+    $('btnReiniciar').textContent = '↻ Reiniciar';
+    $('btnReiniciar').classList.remove('confirmar');
+  }
+
   function conectarBotones() {
     $('veloBoton').addEventListener('click', () => { $('velo').hidden = true; nuevaPartida(); });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
     $('btnVel').addEventListener('click', () => { G.vel = G.vel === 1 ? 2 : 1; refrescarTodo(); });
+    $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
+    // Reiniciar pide un segundo toque para no perder la partida por error
+    $('btnReiniciar').addEventListener('click', () => {
+      if (G.fase !== 'jugando') return;
+      if (!reinicioArmado) {
+        reinicioArmado = true;
+        $('btnReiniciar').textContent = '¿Seguro? Toca otra vez';
+        $('btnReiniciar').classList.add('confirmar');
+        clearTimeout(tReinicio);
+        tReinicio = setTimeout(desarmarReinicio, 3500);
+      } else {
+        desarmarReinicio();
+        nuevaPartida();
+        aviso('Partida reiniciada');
+      }
+    });
     $('btnPausa').addEventListener('click', () => { if (G.fase === 'jugando') { G.pausa = !G.pausa; refrescarTodo(); } });
     $('btnConstruir').addEventListener('click', () => {
       if (!G.puntoSel || !G.tipoSel) return;

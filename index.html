@@ -64,6 +64,20 @@
   #barra button.activo { background: #13233d; border-color: var(--azul); color: var(--azul); }
 
   #mapa { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0e1a; }
+  /* Franja de pausa: no tapa el mapa, se puede seguir construyendo */
+  #pausa {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px;
+    background: linear-gradient(to top, rgba(7, 10, 19, .88), rgba(7, 10, 19, 0));
+  }
+  #pausa span { font-size: 13px; font-weight: 700; color: var(--texto); margin-right: 4px; text-shadow: 0 1px 2px #000; }
+  #pausa button {
+    pointer-events: auto; height: 40px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 700;
+    border: 1px solid #1f6a44; background: #10301f; color: #8fe0b6;
+  }
+  #pausa #btnReiniciar { border-color: #6a3a0a; background: #2a1a0a; color: #e0a060; }
+  #pausa #btnReiniciar.confirmar { border-color: #b3261e; background: #5a1410; color: #ffd9d4; }
+  #pausa button:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
   #aviso {
     position: absolute; left: 50%; top: 96px; transform: translateX(-50%); z-index: 3; pointer-events: none;
     background: rgba(13, 18, 32, .92); border: 1px solid var(--linea); border-radius: 999px;
@@ -145,7 +159,9 @@
     <button id="btnPausa" aria-label="Pausa">II</button>
   </div>
   <div id="aviso"></div>
-  <div id="mapa"></div>
+  <div id="mapa">
+    <div id="pausa" hidden><span>En pausa</span><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button></div>
+  </div>
   <section id="panel">
     <div id="torres"></div>
     <div id="atributos" hidden><button class="atrib" id="atrib0"></button><button class="atrib" id="atrib1"></button><button class="atrib" id="atrib2"></button></div>

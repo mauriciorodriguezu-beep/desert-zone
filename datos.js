@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.2',
+  version: '0.2.1',
 
   // Campo de 360 x 440 px. La cuadrícula de 40 px solo se usa para trazar el camino;
   // las torres se ubican libremente.
