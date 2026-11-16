@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.1',
+  version: '0.1.1',
 
   // Tablero: 9 columnas x 11 filas de 40 px
   celda: 40,
@@ -22,7 +22,7 @@ const DATOS = {
     bonoPorOleada: 5,
     esperaSeg: 10,          // cuenta regresiva entre oleadas
     bonoAdelantoPorSeg: 3,  // cr por cada segundo adelantado (con enemigos vivos cuenta como esperaSeg completos)
-    escalaVida: 0.25        // cada oleada los enemigos tienen +25% de vida respecto de la primera
+    escalaVida: 0.30        // cada oleada los enemigos tienen +30% de vida respecto de la primera
   },
 
   prioridades: {
@@ -64,13 +64,24 @@ const DATOS = {
     { corto: 'Misiles', costo: 200 }
   ],
 
-  /* SINERGIAS: se activan cuando dos torres quedan en celdas contiguas (incluye diagonal).
-     Cada torre recibe cada sinergia una sola vez, aunque tenga varias vecinas. */
+  /* COMBOS: dos torres en celdas contiguas (incluye diagonal) forman un enlace con un combo.
+     - Bono permanente: el campo "para" indica qué torre lo recibe (una sola vez aunque tenga varias vecinas).
+     - Ataque especial ("combo"): el círculo entre las dos torres se va llenando mientras alguna de las dos
+       trabaja (dispara o frena enemigos). Al llenarse, el ataque sale solo.
+         cargaSeg       segundos que tarda en llenarse con una sola vecina. Una torre con varias vecinas
+                        reparte su carga: con 2 enlaces cada uno tarda el doble.
+         dano           daño base del ataque especial (ignora resistencias)
+         danoPorMejora  daño extra por cada mejora comprada entre las dos torres
+     Los "id" no se cambian: el código los usa. */
   sinergias: [
-    { id: 'quebradizas', nombre: 'Balas quebradizas', entre: ['ametralladora', 'crio'], para: 'ametralladora',
-      danoALentos: 1.4, texto: '+40% de daño a enemigos ralentizados o congelados' },
+    { id: 'quebradizas', nombre: 'Metralla de hielo', entre: ['ametralladora', 'crio'], para: 'ametralladora',
+      danoALentos: 1.4,                                  // bono: +40% de daño a enemigos ralentizados o congelados
+      combo: { cargaSeg: 6, dano: 30, danoPorMejora: 6, radio: 45, congela: 0.8, texto: 'explosión que congela' } },
     { id: 'cruzado', nombre: 'Fuego cruzado', entre: ['ametralladora', 'ametralladora'], para: 'ametralladora',
-      cadencia: 0.85, texto: 'dispara 15% más rápido' }
+      cadencia: 0.85,                                    // bono: dispara 15% más rápido
+      combo: { cargaSeg: 6, dano: 45, danoPorMejora: 15, largo: 170, ancho: 12, texto: 'ráfaga que atraviesa' } },
+    { id: 'ventisca', nombre: 'Ventisca', entre: ['crio', 'crio'], para: null,
+      combo: { cargaSeg: 8, dano: 15, danoPorMejora: 6, radio: 105, congela: 1.8, texto: 'onda que congela' } }
   ],
 
   enemigos: {

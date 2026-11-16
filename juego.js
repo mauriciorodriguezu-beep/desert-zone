@@ -118,19 +118,23 @@
       (sg.entre[0] === tipoA && sg.entre[1] === tipoB) || (sg.entre[0] === tipoB && sg.entre[1] === tipoA));
   }
 
+  // Arma los enlaces entre torres contiguas. Cada enlace tiene su combo y su barra de carga (0 a 1).
   function recalcularSinergias() {
-    for (const t of G.torres) t.sin = [];
+    const previas = {};
+    for (const en of G.enlaces || []) previas[en.clave] = en.carga;
+    for (const t of G.torres) { t.sin = []; t.nEnl = 0; }
     G.enlaces = [];
     for (let i = 0; i < G.torres.length; i++) {
       for (let j = i + 1; j < G.torres.length; j++) {
         const a = G.torres[i], b = G.torres[j];
         if (!contiguas(a, b)) continue;
         for (const sg of sinergiaDe(a.tipo, b.tipo)) {
-          let aporta = false;
           for (const t of [a, b]) {
-            if (t.tipo === sg.para && !t.sin.includes(sg.id)) { t.sin.push(sg.id); aporta = true; }
+            if (t.tipo === sg.para && !t.sin.includes(sg.id)) t.sin.push(sg.id);
           }
-          if (aporta) G.enlaces.push({ a, b });
+          const clave = a.c + ',' + a.r + '|' + b.c + ',' + b.r + '|' + sg.id;
+          G.enlaces.push({ a, b, sg, clave, carga: previas[clave] || 0, tDisparo: -9 });
+          a.nEnl++; b.nEnl++;
         }
       }
     }
@@ -141,7 +145,7 @@
     const nombres = new Set();
     for (const t of G.torres) {
       if (!contiguas({ c, r }, t)) continue;
-      for (const sg of sinergiaDe(tipo, t.tipo)) nombres.add(sg.nombre);
+      for (const sg of sinergiaDe(tipo, t.tipo)) nombres.add(sg.nombre + ' (' + sg.combo.texto + ')');
     }
     return [...nombres];
   }
@@ -158,6 +162,8 @@
     calcular(t);
     G.torres.push(t);
     recalcularSinergias();
+    const nuevos = G.enlaces.filter(en => en.a === t || en.b === t);
+    if (nuevos.length) aviso('Combo activo: ' + [...new Set(nuevos.map(en => en.sg.nombre))].join(' + '));
     return t;
   }
 
@@ -235,6 +241,20 @@
     }
   }
 
+  function aplicarDano(e, d) {
+    if (!e.vivo) return;
+    e.vida -= d;
+    if (e.vida <= 0) {
+      G.creditos += e.def.premio;
+      G.bajas++;
+      G.guardado.bajasTotales++;
+      G.efectos.push(e.tipo === 'blindado' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
+      flotar(e.x, e.y - 10, '+' + e.def.premio);
+      resolverEnemigo(e);
+    }
+  }
+
+  // Daño de un disparo normal: aplica resistencias, fragilidad y el bono contra enemigos frenados
   function danar(e, dano, t) {
     const s = t.s;
     let m = e.def.resist[s.tipoDano];
@@ -244,15 +264,61 @@
     if ((e.lento > 0 || e.congelado > 0) && t.sin.includes('quebradizas')) {
       d *= D.sinergias.find(x => x.id === 'quebradizas').danoALentos;
     }
-    e.vida -= d;
-    if (e.vida <= 0 && e.vivo) {
-      G.creditos += e.def.premio;
-      G.bajas++;
-      G.guardado.bajasTotales++;
-      G.efectos.push(e.tipo === 'blindado' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
-      flotar(e.x, e.y - 10, '+' + e.def.premio);
-      resolverEnemigo(e);
+    aplicarDano(e, d);
+  }
+
+  // ── Combos ──
+  const trabajando = t => t.tipo === 'crio' ? !!t.activa : (t.tFuego != null && G.t - t.tFuego < 0.6);
+  function distSegmento(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const k = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(px - x1 - dx * k, py - y1 - dy * k);
+  }
+
+  // Ataque especial de un enlace con la carga llena. Devuelve false si no había a quién atacar
+  // (en ese caso la carga se conserva). Los combos ignoran las resistencias del enemigo.
+  function lanzarCombo(en) {
+    const { a, b, sg } = en, c = sg.combo;
+    const fuerza = c.dano + c.danoPorMejora * (a.nivel + b.nivel);
+    if (sg.id === 'quebradizas') {
+      // Metralla de hielo: la ametralladora dispara una carga que estalla, daña y congela en área
+      const tA = a.tipo === 'ametralladora' ? a : b;
+      const obj = elegirObjetivo(tA);
+      if (!obj) return false;
+      const ox = obj.x, oy = obj.y;
+      for (const e of G.enemigos) {
+        if (!e.vivo || Math.hypot(e.x - ox, e.y - oy) > c.radio) continue;
+        if (!e.def.aereo) e.congelado = Math.max(e.congelado, c.congela);
+        aplicarDano(e, fuerza * (1 + e.fragil));
+      }
+      tA.ang = Math.atan2(oy - tA.y, ox - tA.x); tA.tFuego = G.t;
+      G.efectos.push({ k: 'rayo', x1: tA.x, y1: tA.y, x2: ox, y2: oy, t: 0, dur: 0.25, color: 0x9fe8ff });
+      G.efectos.push({ k: 'hielo', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5 });
+      cartel(ox, oy - c.radio * 0.6, sg.nombre, '#e8fbff', '#0d3b55');
+    } else if (sg.id === 'cruzado') {
+      // Fuego cruzado: las dos ametralladoras disparan una ráfaga que atraviesa a todos los enemigos en su línea
+      const obj = elegirObjetivo(a) || elegirObjetivo(b);
+      if (!obj) return false;
+      const ox = obj.x, oy = obj.y, tocados = new Set();
+      for (const t of [a, b]) {
+        const ang = Math.atan2(oy - t.y, ox - t.x);
+        const x2 = t.x + Math.cos(ang) * c.largo, y2 = t.y + Math.sin(ang) * c.largo;
+        t.ang = ang; t.tFuego = G.t;
+        for (const e of G.enemigos) if (e.vivo && distSegmento(e.x, e.y, t.x, t.y, x2, y2) <= c.ancho) tocados.add(e);
+        G.efectos.push({ k: 'rayo', x1: t.x, y1: t.y, x2, y2, t: 0, dur: 0.28, color: 0xffd23f });
+      }
+      for (const e of tocados) aplicarDano(e, fuerza * (1 + e.fragil));
+      cartel(ox, oy - 22, sg.nombre, '#fff3a0', '#5a3200');
+    } else if (sg.id === 'ventisca') {
+      // Ventisca: onda desde el punto medio de las dos crío que congela y daña alrededor
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const dentro = G.enemigos.filter(e => e.vivo && !e.def.aereo && Math.hypot(e.x - mx, e.y - my) <= c.radio);
+      if (!dentro.length) return false;
+      for (const e of dentro) { e.congelado = Math.max(e.congelado, c.congela); aplicarDano(e, fuerza * (1 + e.fragil)); }
+      G.efectos.push({ k: 'hielo', x: mx, y: my, r: c.radio, t: 0, dur: 0.6 });
+      cartel(mx, my - 26, sg.nombre, '#e8fbff', '#0d3b55');
     }
+    return true;
   }
 
   function elegirObjetivo(t) {
@@ -335,10 +401,21 @@
       if (!e) { t.enfria = 0; continue; }
       t.ang = Math.atan2(e.y - t.y, e.x - t.x);
       t.tFuego = G.t;
-      G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07 });
+      G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07, h: (e.lento > 0 || e.congelado > 0) && t.sin.includes('quebradizas') });
       danar(e, t.s.dano * t.s.balas, t);
       t.enfria += t.s.cadencia * (t.sin.includes('cruzado') ? D.sinergias.find(x => x.id === 'cruzado').cadencia : 1);
       if (t.enfria < 0) t.enfria = 0;
+    }
+
+    // Combos: cada enlace carga mientras alguna de sus dos torres está trabajando.
+    // Una torre con varias vecinas reparte su carga: cada enlace carga más lento.
+    for (const en of G.enlaces) {
+      if (!(trabajando(en.a) || trabajando(en.b))) continue;
+      en.carga += dt / (en.sg.combo.cargaSeg * Math.max(en.a.nEnl, en.b.nEnl));
+      if (en.carga >= 1) {
+        if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; }
+        else en.carga = 1;
+      }
     }
 
     G.enemigos = G.enemigos.filter(e => e.vivo);
@@ -416,6 +493,16 @@
       color: '#fff0a0', stroke: '#4a3200', strokeThickness: 3
     }).setOrigin(0.5).setResolution(ESC).setDepth(5);
     flotantes.push({ o, t: 0, y0: y });
+  }
+  // Cartel grande con el nombre del combo
+  function cartel(x, y, txt, color, borde) {
+    if (!escena) return;
+    x = Math.max(70, Math.min(W - 70, x)); y = Math.max(16, y);
+    const o = escena.add.text(x, y, '¡' + txt + '!', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '15px', fontStyle: 'bold',
+      color, stroke: borde, strokeThickness: 4
+    }).setOrigin(0.5).setResolution(ESC).setDepth(6);
+    flotantes.push({ o, t: 0, y0: y, dur: 1.2, sube: 14 });
   }
   function limpiarFlotantes() { for (const f of flotantes) f.o.destroy(); flotantes = []; }
 
@@ -530,6 +617,23 @@
   function enlace(g, x1, y1, x2, y2, alfa) {
     g.lineStyle(5, 0x3a2a10, 0.45 * alfa).lineBetween(x1, y1, x2, y2);
     g.lineStyle(2.5, COL.oro, alfa).lineBetween(x1, y1, x2, y2);
+  }
+
+  // Medidor de carga del combo: círculo entre las dos torres que se va llenando
+  function medidorCombo(g, en) {
+    const mx = (en.a.x + en.b.x) / 2, my = (en.a.y + en.b.y) / 2, k = Math.min(1, en.carga);
+    const hace = G.t - en.tDisparo;
+    g.fillStyle(0x2a1c08, 0.9).fillCircle(mx, my, 7);
+    g.lineStyle(1, 0x000000, 0.5).strokeCircle(mx, my, 7);
+    if (k > 0) {
+      g.lineStyle(3.2, k >= 1 ? 0xffffff : COL.oro, 1);
+      g.beginPath(); g.arc(mx, my, 4.6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); g.strokePath();
+    }
+    if (hace < 0.4) {
+      const q = hace / 0.4;
+      g.lineStyle(3, 0xffffff, 1 - q).strokeCircle(mx, my, 7 + 16 * q);
+      g.lineStyle(6, 0xffffff, 0.8 * (1 - q)).lineBetween(en.a.x, en.a.y, en.b.x, en.b.y);
+    }
   }
 
   function dibujarTorre(g, t, alfa) {
@@ -685,6 +789,7 @@
     if (G.torreSel) marcarAlcance(g, G.torreSel.x, G.torreSel.y, G.torreSel.s.alcance, G.torreSel.tipo);
     for (const en of G.enlaces || []) enlace(g, en.a.x, en.a.y, en.b.x, en.b.y, 0.85);
     for (const t of G.torres) dibujarTorre(g, t, 1);
+    for (const en of G.enlaces || []) medidorCombo(g, en);
     if (G.torreSel) {
       const t = G.torreSel;
       g.lineStyle(4, 0x3a2a10, 0.5).strokeRoundedRect(t.x - 18, t.y - 18, 36, 36, 7);
@@ -696,8 +801,19 @@
     for (const f of G.efectos) {
       const k = f.t / f.dur;
       if (f.k === 'traza') {
-        g.lineStyle(2, 0xfff3a0, 0.9 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
-        g.fillStyle(0xffffff, 1 - k).fillCircle(f.x2, f.y2, 2.2);
+        g.lineStyle(f.h ? 3 : 2, f.h ? 0x9fe8ff : 0xfff3a0, 0.9 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
+        g.fillStyle(0xffffff, 1 - k).fillCircle(f.x2, f.y2, f.h ? 3.4 : 2.2);
+      } else if (f.k === 'rayo') {
+        g.lineStyle(3 + 9 * (1 - k), f.color, 0.6 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
+        g.lineStyle(1 + 3 * (1 - k), 0xffffff, 1 - k).lineBetween(f.x1, f.y1, f.x2, f.y2);
+      } else if (f.k === 'hielo') {
+        const r = f.r * (0.35 + 0.65 * k);
+        g.fillStyle(0xe8fbff, 0.6 * (1 - k)).fillCircle(f.x, f.y, r);
+        g.lineStyle(3, 0xffffff, 1 - k).strokeCircle(f.x, f.y, r);
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4 + 0.3, cs = Math.cos(a), sn = Math.sin(a);
+          g.lineStyle(2.2, COL.crioAzul, 1 - k).lineBetween(f.x + cs * r * 0.4, f.y + sn * r * 0.4, f.x + cs * r * 1.08, f.y + sn * r * 1.08);
+        }
       } else if (f.k === 'anillo') {
         g.lineStyle(4, 0xffffff, 0.9 * (1 - k)).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k));
         g.lineStyle(2, COL.crioAzul, 1 - k).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k) - 3);
@@ -742,8 +858,12 @@
         }
       }
       const dtReal = Math.min(delta, 100) / 1000;
-      for (const f of flotantes) { f.t += dtReal; f.o.y = f.y0 - 22 * f.t; f.o.setAlpha(Math.max(0, 1 - f.t / 0.8)); }
-      flotantes = flotantes.filter(f => { if (f.t >= 0.8) { f.o.destroy(); return false; } return true; });
+      for (const f of flotantes) {
+        const dur = f.dur || 0.8;
+        f.t += dtReal; f.o.y = f.y0 - (f.sube || 22) * f.t;
+        f.o.setAlpha(Math.max(0, Math.min(1, (1 - f.t / dur) * 2.5)));
+      }
+      flotantes = flotantes.filter(f => { if (f.t >= (f.dur || 0.8)) { f.o.destroy(); return false; } return true; });
       dibujar();
       tUI += delta;
       if (tUI >= 100) { tUI = 0; refrescarTodo(); }
@@ -814,12 +934,17 @@
       const t = G.torreSel, def = D.torres[t.tipo], m = mejoraSiguiente(t);
       poner(tit, 'textContent', def.nombre + ' · mejoras ' + t.nivel + '/' + def.mejoras.length);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
-      if (t.sin.length) {
-        tSin = 'Sinergia: ' + t.sin.map(id => { const sg = D.sinergias.find(x => x.id === id); return sg.nombre + ' (' + sg.texto + ')'; }).join(' · ');
-      } else if (t.tipo === 'crio') {
-        tSin = G.enlaces.some(en => en.a === t || en.b === t) ? 'Sinergia: potencia a la ametralladora vecina' : 'Sin sinergia: ponle una Ametralladora al lado';
+      const mios = {};
+      for (const en of G.enlaces) {
+        if (en.a !== t && en.b !== t) continue;
+        const m0 = mios[en.sg.nombre] || (mios[en.sg.nombre] = { n: 0, carga: 0 });
+        m0.n++; m0.carga = Math.max(m0.carga, Math.min(1, en.carga));
+      }
+      const nombres = Object.keys(mios);
+      if (nombres.length) {
+        tSin = 'Combo: ' + nombres.map(n => n + (mios[n].n > 1 ? ' ×' + mios[n].n : '') + ' ' + Math.floor(mios[n].carga * 100) + '%').join(' · ');
       } else {
-        tSin = 'Sin sinergia: ponle una Crío u otra Ametralladora al lado';
+        tSin = t.tipo === 'crio' ? 'Sin combo: ponle una Ametralladora u otra Crío al lado' : 'Sin combo: ponle una Crío u otra Ametralladora al lado';
       }
       vM = true; vV = true; vP = t.tipo === 'ametralladora';
       if (m) { poner(bM, 'textContent', 'Mejorar ' + m.costo + 'cr · ' + m.nombre); poner(bM, 'disabled', G.creditos < m.costo); }
@@ -833,7 +958,7 @@
       if (G.celdaSel) {
         poner(det, 'textContent', textoStats(G.tipoSel, s));
         const prev = sinergiasPrevistas(G.tipoSel, G.celdaSel.c, G.celdaSel.r);
-        tSin = prev.length ? 'Activa sinergia: ' + prev.join(' · ') : 'Sin sinergia en esta celda';
+        tSin = prev.length ? 'Activa combo: ' + prev.join(' · ') : 'Sin combo en esta celda';
         vC = true; vX = true;
         poner(bC, 'textContent', G.creditos >= def.costo ? 'Construir ' + def.costo + 'cr' : 'Faltan ' + (def.costo - G.creditos) + 'cr');
         poner(bC, 'disabled', G.creditos < def.costo);
@@ -893,7 +1018,7 @@
     $('veloSub').textContent = MAPA.nombre + ' · ' + TOTAL_OLEADAS + ' oleadas';
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
-      : '<p>Defiende la base. Construye torres junto al camino y ponlas contiguas para activar sinergias.</p>';
+      : '<p>Defiende la base. Construye torres junto al camino y ponlas contiguas: cargan un combo, un ataque especial que se dispara solo.</p>';
     $('veloBoton').textContent = 'Jugar';
     $('velo').hidden = false;
   }
