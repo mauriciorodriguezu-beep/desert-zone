@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.1.3',
+  version: '0.2',
 
   // Campo de 360 x 440 px. La cuadrícula de 40 px solo se usa para trazar el camino;
   // las torres se ubican libremente.
@@ -29,7 +29,7 @@ const DATOS = {
     bonoPorOleada: 5,
     esperaSeg: 10,          // cuenta regresiva entre oleadas
     bonoAdelantoPorSeg: 3,  // cr por cada segundo adelantado (con enemigos vivos cuenta como esperaSeg completos)
-    escalaVida: 0.30        // cada oleada los enemigos tienen +30% de vida respecto de la primera
+    escalaVida: 0.27        // cada oleada los enemigos tienen +27% de vida respecto de la primera
   },
 
   prioridades: {
@@ -117,33 +117,55 @@ const DATOS = {
       combo: { cargaSeg: 8, dano: 15, danoPorMejora: 3, radio: 105, congela: 1.8, texto: 'onda que congela' } }
   ],
 
+  /* ENEMIGOS
+     vidas     vidas que quita si llega a la base (1 si no se indica)
+     resFrio   cuánto le afecta el frío: 1 = normal, 0.5 = la mitad
+     noCongela true = no se puede congelar (ni con torres ni con combos)
+     jefe      true = se dibuja como tanque pesado y muestra su barra de vida arriba del campo */
   enemigos: {
     soldado:  { nombre: 'Soldado',  vida: 45,  vel: 45, premio: 7, aereo: false,
                 resist: { fisico: 1,   energia: 1,   explosivo: 1 } },
     blindado: { nombre: 'Blindado', vida: 200, vel: 28, premio: 18, aereo: false,
-                resist: { fisico: 0.5, energia: 1.5, explosivo: 1 } }
+                resist: { fisico: 0.5, energia: 1.5, explosivo: 1 } },
+    jefe:      { nombre: 'Jefe',       vida: 1000, vel: 24, premio: 100, aereo: false, jefe: true,
+                 vidas: 5, resFrio: 0.5, noCongela: true,
+                 resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } },
+    jefeFinal: { nombre: 'Jefe final', vida: 2200, vel: 24, premio: 200, aereo: false, jefe: true,
+                 vidas: 10, resFrio: 0.5, noCongela: true,
+                 resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } }
   },
 
   /* MAPAS
-     camino: esquinas del recorrido en [columna, fila]; -1 y 9 quedan fuera del tablero (entrada y base).
+     camino: esquinas del recorrido en [columna, fila]; -1 y 9 quedan fuera del campo (entrada y base).
      oleadas: cada oleada es una lista de grupos { tipo, n, cada (s entre enemigos), desde (s de inicio, opcional) }.
-     Si no se indica "desde", el grupo parte 1 s después de terminar el anterior. */
+     Si no se indica "desde", el grupo parte 1 s después de terminar el anterior.
+     La vida de todos los enemigos, jefe incluido, crece con el número de oleada (oleada.escalaVida). */
   mapaActual: 'desierto',
   mapas: {
     desierto: {
       nombre: 'Zona desértica',
       camino: [[-1, 1], [7, 1], [7, 5], [1, 5], [1, 9], [9, 9]],
       oleadas: [
-        [{ tipo: 'soldado', n: 6,  cada: 1.2 }],
-        [{ tipo: 'soldado', n: 10, cada: 1.0 }],
-        [{ tipo: 'soldado', n: 8,  cada: 1.0 }, { tipo: 'blindado', n: 1, cada: 1 }],
-        [{ tipo: 'soldado', n: 14, cada: 0.7 }],
-        [{ tipo: 'blindado', n: 3, cada: 2.5 }, { tipo: 'soldado', n: 8, cada: 0.8 }],
-        [{ tipo: 'soldado', n: 14, cada: 0.7 }, { tipo: 'blindado', n: 2, cada: 2.0 }],
-        [{ tipo: 'blindado', n: 6, cada: 2.0 }],
-        [{ tipo: 'soldado', n: 18, cada: 0.55 }, { tipo: 'blindado', n: 3, cada: 2.0 }],
-        [{ tipo: 'blindado', n: 6, cada: 1.8, desde: 0 }, { tipo: 'soldado', n: 12, cada: 0.8, desde: 2 }],
-        [{ tipo: 'soldado', n: 20, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }]
+        /*  1 */ [{ tipo: 'soldado', n: 6,  cada: 1.2 }],
+        /*  2 */ [{ tipo: 'soldado', n: 10, cada: 1.0 }],
+        /*  3 */ [{ tipo: 'soldado', n: 8,  cada: 1.0 }, { tipo: 'blindado', n: 1, cada: 1 }],
+        /*  4 */ [{ tipo: 'soldado', n: 14, cada: 0.7 }],
+        /*  5 */ [{ tipo: 'blindado', n: 3, cada: 2.5 }, { tipo: 'soldado', n: 8, cada: 0.8 }],
+        /*  6 */ [{ tipo: 'soldado', n: 14, cada: 0.7 }, { tipo: 'blindado', n: 2, cada: 2.0 }],
+        /*  7 */ [{ tipo: 'blindado', n: 6, cada: 2.0 }],
+        /*  8 */ [{ tipo: 'soldado', n: 18, cada: 0.55 }, { tipo: 'blindado', n: 3, cada: 2.0 }],
+        /*  9 */ [{ tipo: 'blindado', n: 6, cada: 1.8, desde: 0 }, { tipo: 'soldado', n: 12, cada: 0.8, desde: 2 }],
+        /* 10 JEFE */ [{ tipo: 'soldado', n: 10, cada: 0.8, desde: 0 }, { tipo: 'jefe', n: 1, cada: 1, desde: 4 }, { tipo: 'blindado', n: 4, cada: 2.0, desde: 9 }],
+        /* 11 */ [{ tipo: 'soldado', n: 20, cada: 0.5 }],
+        /* 12 */ [{ tipo: 'blindado', n: 8, cada: 1.6 }],
+        /* 13 */ [{ tipo: 'soldado', n: 16, cada: 0.6, desde: 0 }, { tipo: 'blindado', n: 5, cada: 2.0, desde: 1 }],
+        /* 14 */ [{ tipo: 'soldado', n: 24, cada: 0.4 }],
+        /* 15 */ [{ tipo: 'blindado', n: 10, cada: 1.4, desde: 0 }, { tipo: 'soldado', n: 10, cada: 0.7, desde: 3 }],
+        /* 16 */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 6, cada: 1.8, desde: 2 }],
+        /* 17 */ [{ tipo: 'blindado', n: 12, cada: 1.2 }],
+        /* 18 */ [{ tipo: 'soldado', n: 26, cada: 0.4, desde: 0 }, { tipo: 'blindado', n: 6, cada: 1.6, desde: 5 }],
+        /* 19 */ [{ tipo: 'blindado', n: 12, cada: 1.3, desde: 0 }, { tipo: 'soldado', n: 20, cada: 0.5, desde: 2 }],
+        /* 20 JEFE */ [{ tipo: 'soldado', n: 16, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 6 }]
       ]
     }
   }

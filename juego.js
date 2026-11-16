@@ -250,6 +250,7 @@
   function puedeIniciar() {
     return G.fase === 'jugando' && !G.generando && G.oleada < TOTAL_OLEADAS;
   }
+  const oleadaConJefe = n => !!MAPA.oleadas[n - 1] && MAPA.oleadas[n - 1].some(g => D.enemigos[g.tipo].jefe);
   function iniciarOleada(conBono) {
     if (!puedeIniciar()) return false;
     if (conBono) G.creditos += bonoAdelanto();
@@ -268,6 +269,7 @@
     G.tOleada = 0;
     G.generando = true;
     G.enCuenta = false; G.cuenta = 0;
+    if (oleadaConJefe(G.oleada)) aviso('¡Jefe en camino!');
     return true;
   }
 
@@ -295,7 +297,8 @@
       G.creditos += e.def.premio;
       G.bajas++;
       G.guardado.bajasTotales++;
-      G.efectos.push(e.tipo === 'blindado' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
+      if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡Jefe destruido! +' + e.def.premio + 'cr'); }
+      else G.efectos.push(e.tipo === 'blindado' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
       flotar(e.x, e.y - 10, '+' + e.def.premio);
       resolverEnemigo(e);
     }
@@ -335,7 +338,7 @@
       const ox = obj.x, oy = obj.y;
       for (const e of G.enemigos) {
         if (!e.vivo || Math.hypot(e.x - ox, e.y - oy) > c.radio) continue;
-        if (!e.def.aereo) e.congelado = Math.max(e.congelado, c.congela);
+        if (!e.def.aereo && !e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela);
         aplicarDano(e, fuerza * (1 + e.fragil));
       }
       tA.ang = Math.atan2(oy - tA.y, ox - tA.x); tA.tFuego = G.t;
@@ -361,7 +364,7 @@
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const dentro = G.enemigos.filter(e => e.vivo && !e.def.aereo && Math.hypot(e.x - mx, e.y - my) <= c.radio);
       if (!dentro.length) return false;
-      for (const e of dentro) { e.congelado = Math.max(e.congelado, c.congela); aplicarDano(e, fuerza * (1 + e.fragil)); }
+      for (const e of dentro) { if (!e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela); aplicarDano(e, fuerza * (1 + e.fragil)); }
       G.efectos.push({ k: 'hielo', x: mx, y: my, r: c.radio, t: 0, dur: 0.6 });
       cartel(mx, my - 26, sg.nombre, '#e8fbff', '#0d3b55');
     }
@@ -407,7 +410,8 @@
         const dx = e.x - t.x, dy = e.y - t.y;
         if (dx * dx + dy * dy > r2) continue;
         enRango++;
-        if (s.lento > e.lento) e.lento = s.lento;
+        const lento = s.lento * (e.def.resFrio == null ? 1 : e.def.resFrio);   // el jefe resiste el frío
+        if (lento > e.lento) e.lento = lento;
         if (s.fragil && s.fragil > e.fragil) e.fragil = s.fragil;
       }
       t.activa = enRango > 0;
@@ -418,7 +422,7 @@
           for (const e of G.enemigos) {
             if (e.def.aereo) continue;
             const dx = e.x - t.x, dy = e.y - t.y;
-            if (dx * dx + dy * dy <= r2) e.congelado = s.congela;
+            if (dx * dx + dy * dy <= r2 && !e.def.noCongela) e.congelado = s.congela;
           }
           G.efectos.push({ k: 'anillo', x: t.x, y: t.y, r: s.alcance, t: 0, dur: 0.45 });
         }
@@ -430,8 +434,9 @@
       if (e.congelado > 0) continue;
       e.dist += e.def.vel * (1 - e.lento) * dt;
       if (e.dist >= LARGO) {
-        G.vidas--;
-        aviso('Un enemigo llegó a la base');
+        const quita = e.def.vidas || 1;
+        G.vidas -= quita;
+        aviso(e.def.jefe ? '¡El jefe llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
         resolverEnemigo(e);
         continue;
       }
@@ -505,7 +510,7 @@
     alcance: { ametralladora: 0xffffff, crio: 0xdff6ff }
   };
   const ANCHO_CAMINO = 24;
-  let escena = null, gDin = null;
+  let escena = null, gDin = null, txtJefe = null;
   let flotantes = [];
 
   // Números "al azar" repetibles: el terreno sale igual en cada partida
@@ -743,7 +748,7 @@
   }
 
   function dibujarEnemigo(g, e) {
-    const x = e.x, y = e.y, blind = e.tipo === 'blindado';
+    const x = e.x, y = e.y, blind = e.tipo === 'blindado', jefe = !!e.def.jefe;
     // Giro suave en las curvas (solo visual)
     const meta = anguloEn(e.dist);
     if (e.va == null) e.va = meta;
@@ -753,7 +758,31 @@
     e.va += dif * 0.25;
     const a = e.va;
 
-    if (blind) {
+    if (jefe) {
+      // Tanque pesado: casco ancho negro con franjas rojas, borde dorado y cañón doble
+      poli(g, x + 3, y + 4, a, caja(-19, -15, 38, 30), COL.sombra, 0.32);
+      poli(g, x, y, a, caja(-18, -15.5, 36, 7), 0x1a1716, 1);
+      poli(g, x, y, a, caja(-18, 8.5, 36, 7), 0x1a1716, 1);
+      const paso = (e.dist * 0.5) % 5;
+      for (let k = -17 + paso; k < 17; k += 5) {
+        poli(g, x, y, a, caja(k, -15.5, 1.4, 7), 0x6a6460, 0.9);
+        poli(g, x, y, a, caja(k, 8.5, 1.4, 7), 0x6a6460, 0.9);
+      }
+      poli(g, x, y, a, [[-17, -11], [11, -11], [19, -5], [19, 5], [11, 11], [-17, 11]], 0x2f2a28, 1, COL.oro, 1.6);
+      const franja = e.tipo === 'jefeFinal' ? COL.oro : COL.rojo;   // el jefe final lleva franjas doradas
+      poli(g, x, y, a, caja(-12, -11, 4, 22), franja, 1);
+      poli(g, x, y, a, caja(-5, -11, 4, 22), franja, 1);
+      poli(g, x, y, a, caja(-16, -5, 3, 10), 0x15171a, 1);
+      poli(g, x, y, a, caja(5, -5.2, 17, 3.4), 0x121110, 1);
+      poli(g, x, y, a, caja(5, 1.8, 17, 3.4), 0x121110, 1);
+      poli(g, x, y, a, caja(20, -6, 3, 5), 0x000000, 1);
+      poli(g, x, y, a, caja(20, 1, 3, 5), 0x000000, 1);
+      const cs = Math.cos(a), sn = Math.sin(a);
+      g.fillStyle(0x3a3634, 1).fillCircle(x + cs * 2, y + sn * 2, 8.5);
+      g.lineStyle(1.6, COL.oro, 1).strokeCircle(x + cs * 2, y + sn * 2, 8.5);
+      g.fillStyle(COL.rojo, 1).fillCircle(x + cs * 2, y + sn * 2, 3.6);
+      g.fillStyle(0xff8a8a, 1).fillCircle(x + cs * 2 - 1, y + sn * 2 - 1.2, 1.3);
+    } else if (blind) {
       poli(g, x + 2, y + 3, a, caja(-12, -9, 24, 18), COL.sombra, 0.28);
       poli(g, x, y, a, caja(-11, -9.5, 22, 4.5), COL.carbonOsc, 1);
       poli(g, x, y, a, caja(-11, 5, 22, 4.5), COL.carbonOsc, 1);
@@ -784,7 +813,7 @@
       g.fillStyle(0x7d858d, 1).fillCircle(px + cs * 0.6 - 1, py + sn * 0.6 - 1.2, 1.2);
     }
 
-    const rr = blind ? 14 : 10;
+    const rr = jefe ? 24 : blind ? 14 : 10;
     if (e.congelado > 0) {
       g.fillStyle(COL.hielo, 0.6).fillCircle(x, y, rr);
       g.lineStyle(1.8, 0xffffff, 1).strokeCircle(x, y, rr);
@@ -793,7 +822,7 @@
       g.lineStyle(1.5, COL.crioAzul, 0.9).strokeCircle(x, y, rr);
     }
     if (e.vida < e.vidaMax) {
-      const k = Math.max(0, e.vida / e.vidaMax), w = blind ? 24 : 18, by = y - (blind ? 19 : 15);
+      const k = Math.max(0, e.vida / e.vidaMax), w = jefe ? 40 : blind ? 24 : 18, by = y - (jefe ? 27 : blind ? 19 : 15);
       g.fillStyle(0x1b1b1b, 0.8).fillRect(x - w / 2 - 1, by - 1, w + 2, 5);
       g.fillStyle(k > 0.5 ? 0x3ddc6a : k > 0.25 ? 0xffb020 : 0xff4a3a, 1).fillRect(x - w / 2, by, w * k, 3);
     }
@@ -870,10 +899,22 @@
         g.fillStyle(0xe9d3a4, 0.75 * (1 - k)).fillCircle(f.x, f.y, 4 + 9 * k);
         g.fillStyle(0xb8935a, 0.5 * (1 - k)).fillCircle(f.x + 3, f.y - 2, 3 + 6 * k);
       } else if (f.k === 'explosion') {
-        g.fillStyle(0x2a2625, 0.5 * (1 - k)).fillCircle(f.x, f.y, 8 + 14 * k);
-        g.fillStyle(0xff8a1f, 0.95 * (1 - k)).fillCircle(f.x, f.y, 5 + 11 * k);
-        g.fillStyle(0xfff3a0, 1 - k).fillCircle(f.x, f.y, 3 + 5 * k);
+        const z = f.e || 1;
+        g.fillStyle(0x2a2625, 0.5 * (1 - k)).fillCircle(f.x, f.y, (8 + 14 * k) * z);
+        g.fillStyle(0xff8a1f, 0.95 * (1 - k)).fillCircle(f.x, f.y, (5 + 11 * k) * z);
+        g.fillStyle(0xfff3a0, 1 - k).fillCircle(f.x, f.y, (3 + 5 * k) * z);
       }
+    }
+
+    // Barra de vida del jefe, arriba del campo
+    const jefe = G.enemigos.find(e => e.def.jefe && e.vivo);
+    if (txtJefe) txtJefe.setVisible(!!jefe);
+    if (jefe) {
+      const k = Math.max(0, jefe.vida / jefe.vidaMax), bw = 190, bx = (W - bw) / 2;
+      g.fillStyle(0x140d0c, 0.85).fillRoundedRect(bx - 34, 4, bw + 40, 14, 4);
+      g.fillStyle(0x4a1513, 1).fillRect(bx, 8, bw, 6);
+      g.fillStyle(0xe5342a, 1).fillRect(bx, 8, bw * k, 6);
+      g.lineStyle(1, COL.oro, 0.9).strokeRect(bx, 8, bw, 6);
     }
   }
 
@@ -889,6 +930,7 @@
       this.add.text(4, ini.y - 30, 'ENTRADA', estilo).setResolution(ESC);
       this.add.text(W - 3, fin.y - 36, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
       gDin = this.add.graphics().setDepth(2);
+      txtJefe = this.add.text((W - 190) / 2 - 30, 5.5, 'JEFE', { fontFamily: 'system-ui, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#ffd23f' }).setResolution(ESC).setDepth(4).setVisible(false);
       this.input.mouse && this.input.mouse.disableContextMenu();
       // Tocar ubica la torre; arrastrar el dedo la mueve antes de confirmar
       let arrastre = false;
@@ -1082,10 +1124,10 @@
     let txt, on = true;
     if (G.fase !== 'jugando') { txt = '—'; on = false; }
     else if (G.oleada === 0) txt = '▶ Iniciar oleada 1';
-    else if (G.generando) { txt = 'Oleada ' + G.oleada + ' en curso'; on = false; }
+    else if (G.generando) { txt = 'Oleada ' + G.oleada + (oleadaConJefe(G.oleada) ? ' (JEFE)' : '') + ' en curso'; on = false; }
     else if (G.oleada >= TOTAL_OLEADAS) { txt = 'Última oleada'; on = false; }
-    else if (G.enemigos.length) txt = '▶ Adelantar oleada ' + (G.oleada + 1) + ' · +' + bonoAdelanto() + 'cr';
-    else txt = '▶ Oleada ' + (G.oleada + 1) + ' en ' + Math.ceil(G.cuenta) + ' s · +' + bonoAdelanto() + 'cr';
+    else if (G.enemigos.length) txt = '▶ Adelantar oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · +' + bonoAdelanto() + 'cr';
+    else txt = '▶ Oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' en ' + Math.ceil(G.cuenta) + ' s · +' + bonoAdelanto() + 'cr';
     poner(b, 'textContent', txt);
     poner(b, 'disabled', !on);
     poner($('btnVel'), 'textContent', '×' + G.vel);
