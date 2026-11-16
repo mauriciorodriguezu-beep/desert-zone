@@ -95,17 +95,25 @@
   }
 
   // ───────────────────────── 3. REGLAS ─────────────────────────
-  const NO_STAT = { mejoras: 1, nombre: 1, corto: 1, costo: 1, desc: 1 };
+  const NO_STAT = { atributos: 1, nombre: 1, corto: 1, costo: 1, desc: 1, nota: 1 };
 
-  // Valores vigentes de una torre: base + mejoras compradas
-  function calcular(t) {
-    const def = D.torres[t.tipo], s = {};
+  // Valores de una torre: base + los niveles comprados de cada atributo. niv = { atributo: nivel }
+  function statsDe(tipo, niv) {
+    const def = D.torres[tipo], s = {};
     for (const k in def) if (!NO_STAT[k]) s[k] = def[k];
-    for (let i = 0; i < t.nivel; i++) {
-      const m = def.mejoras[i];
-      for (const k in m) if (!NO_STAT[k]) s[k] = m[k];
+    for (const id in def.atributos) {
+      const n = (niv && niv[id]) || 0;
+      for (let i = 0; i < n; i++) {
+        const m = def.atributos[id].niveles[i];
+        for (const k in m) if (!NO_STAT[k]) s[k] = m[k];
+      }
     }
-    t.s = s;
+    return s;
+  }
+  function calcular(t) {
+    t.s = statsDe(t.tipo, t.niv);
+    t.nivel = 0;
+    for (const id in t.niv) t.nivel += t.niv[id];   // total de mejoras compradas (sube el daño de los combos)
   }
 
   // ── Colocación libre: las torres van en cualquier punto del campo ──
@@ -186,7 +194,7 @@
     G.creditos -= def.costo;
     const t = {
       tipo, x, y,
-      nivel: 0, invertido: def.costo, prioridad: 'primero',
+      niv: {}, nivel: 0, invertido: def.costo, prioridad: 'primero',
       enfria: 0, ang: -Math.PI / 2, tCong: 0, sin: []
     };
     calcular(t);
@@ -197,15 +205,24 @@
     return t;
   }
 
-  function mejoraSiguiente(t) { return D.torres[t.tipo].mejoras[t.nivel] || null; }
-  function mejorar(t) {
-    const m = mejoraSiguiente(t);
+  // Cada atributo (daño, cadencia, alcance...) se mejora por separado
+  function mejoraSiguiente(t, id) {
+    const at = D.torres[t.tipo].atributos[id];
+    return (at && at.niveles[t.niv[id] || 0]) || null;
+  }
+  function mejorar(t, id) {
+    const m = mejoraSiguiente(t, id);
     if (!m || G.creditos < m.costo) return false;
     G.creditos -= m.costo;
     t.invertido += m.costo;
-    t.nivel++;
+    t.niv[id] = (t.niv[id] || 0) + 1;
     calcular(t);
     return true;
+  }
+  function maxMejoras(tipo) {
+    let n = 0;
+    for (const id in D.torres[tipo].atributos) n += D.torres[tipo].atributos[id].niveles.length;
+    return n;
   }
 
   const valorVenta = t => Math.floor(t.invertido * D.venta);
@@ -432,7 +449,7 @@
       t.ang = Math.atan2(e.y - t.y, e.x - t.x);
       t.tFuego = G.t;
       G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07, h: (e.lento > 0 || e.congelado > 0) && t.sin.includes('quebradizas') });
-      danar(e, t.s.dano * t.s.balas, t);
+      danar(e, t.s.dano, t);
       t.enfria += t.s.cadencia * (t.sin.includes('cruzado') ? D.sinergias.find(x => x.id === 'cruzado').cadencia : 1);
       if (t.enfria < 0) t.enfria = 0;
     }
@@ -672,7 +689,7 @@
     for (const [dx, dy] of [[-11, -11], [11, -11], [-11, 11], [11, 11]]) g.fillCircle(x + dx, y + dy, 1.3);
 
     if (!crio) {
-      const a = t.ang, doble = t.s && t.s.balas > 1;
+      const a = t.ang, doble = t.s && t.s.doble;
       const disparando = t.tFuego != null && G.t - t.tFuego < 0.06;
       g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 9.5);
       g.fillStyle(0x4a5530, alfa).fillCircle(x, y, 9.5);
@@ -716,10 +733,12 @@
         g.lineStyle(1.5, 0xffffff, 0.35 + 0.4 * k).strokeCircle(x, y, 11 + k * 2);
       }
     }
-    // Marcas de mejora
-    for (let i = 0; i < (t.nivel || 0); i++) {
-      g.fillStyle(0x3a2a10, alfa).fillRect(x - 10.5 + i * 7, y + 9.5, 6, 4.5);
-      g.fillStyle(COL.oro, alfa).fillRect(x - 9.5 + i * 7, y + 10.5, 4, 2.5);
+    // Marcas de mejora: un punto dorado por cada mejora comprada
+    const n = t.nivel || 0;
+    for (let i = 0; i < n; i++) {
+      const px = x - (n - 1) * 1.5 + i * 3;
+      g.fillStyle(0x3a2a10, alfa).fillRect(px - 1.5, y + 10, 3, 3.6);
+      g.fillStyle(COL.oro, alfa).fillRect(px - 0.9, y + 10.6, 1.8, 2.4);
     }
   }
 
@@ -958,22 +977,57 @@
 
   function textoStats(tipo, s) {
     if (tipo === 'ametralladora') {
-      return 'Daño ' + s.dano + (s.balas > 1 ? ' ×' + s.balas : '') + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + s.alcance +
-        (s.perforante ? ' · perforante' : '');
+      return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + s.alcance + (s.perforante ? ' · perforante' : '');
     }
     return 'Ralentiza ' + Math.round(s.lento * 100) + '% · alcance ' + s.alcance +
-      (s.congela ? ' · congela ' + s.congela + ' s cada ' + s.cadaSeg + ' s' : '') +
+      (s.congela ? ' · congela ' + dec(s.congela) + ' s cada ' + s.cadaSeg + ' s' : '') +
       (s.fragil ? ' · fragilidad +' + Math.round(s.fragil * 100) + '%' : '');
+  }
+
+  // Cómo se muestra el valor de cada atributo en su botón
+  const VER = {
+    dano: s => String(s.dano),
+    cadencia: s => dec(s.cadencia) + ' s',
+    alcance: s => String(s.alcance),
+    frio: s => Math.round(s.lento * 100) + '%',
+    congelacion: s => s.congela ? dec(s.congela) + ' s' : 'no'
+  };
+  function ponerHtml(el, html) { if (el._h !== html) { el._h = html; el.innerHTML = html; } }
+
+  // Botones de mejora por atributo de la torre seleccionada (reemplazan a la fila de torres)
+  function refrescarAtributos(t) {
+    const def = D.torres[t.tipo], ids = Object.keys(def.atributos), botones = $('atributos').children;
+    for (let i = 0; i < botones.length; i++) {
+      const b = botones[i], id = ids[i];
+      if (!id) { mostrar(b, false); continue; }
+      mostrar(b, true);
+      b.dataset.id = id;
+      const at = def.atributos[id], n = t.niv[id] || 0, sig = at.niveles[n], ver = VER[id] || (() => '');
+      let puntos = '';
+      for (let k = 0; k < at.niveles.length; k++) puntos += '<i class="' + (k < n ? 'on' : '') + '"></i>';
+      const ahora = ver(t.s);
+      let l2, l3;
+      if (sig) {
+        const nv = Object.assign({}, t.niv); nv[id] = n + 1;
+        const luego = ver(statsDe(t.tipo, nv));
+        l2 = luego !== ahora ? ahora + ' → ' + luego : ahora;
+        l3 = sig.costo + 'cr' + (sig.nota ? ' · ' + sig.nota : '');
+      } else { l2 = ahora; l3 = 'Máximo'; }
+      ponerHtml(b, '<span class="an">' + at.nombre + '<span class="pp">' + puntos + '</span></span><span class="av">' + l2 + '</span><span class="ac">' + l3 + '</span>');
+      poner(b, 'disabled', !sig || G.creditos < sig.costo);
+      b.classList.toggle('max', !sig);
+    }
   }
 
   function refrescarPanel() {
     const tit = $('infoTitulo'), det = $('infoDet'), sin = $('infoSin');
-    const bC = $('btnConstruir'), bX = $('btnCancelar'), bM = $('btnMejorar'), bP = $('btnPrioridad'), bV = $('btnVender');
-    let vC = false, vX = false, vM = false, vP = false, vV = false, tSin = '';
+    const bC = $('btnConstruir'), bX = $('btnCancelar'), bP = $('btnPrioridad'), bV = $('btnVender');
+    let vC = false, vX = false, vP = false, vV = false, tSin = '';
 
     if (G.torreSel) {
-      const t = G.torreSel, def = D.torres[t.tipo], m = mejoraSiguiente(t);
-      poner(tit, 'textContent', def.nombre + ' · mejoras ' + t.nivel + '/' + def.mejoras.length);
+      const t = G.torreSel, def = D.torres[t.tipo];
+      poner(tit, 'textContent', def.nombre + ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo));
+      refrescarAtributos(t);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
       for (const en of G.enlaces) {
@@ -987,14 +1041,12 @@
       } else {
         tSin = t.tipo === 'crio' ? 'Sin combo: ponle una Ametralladora u otra Crío al lado' : 'Sin combo: ponle una Crío u otra Ametralladora al lado';
       }
-      vM = true; vV = true; vP = t.tipo === 'ametralladora';
-      if (m) { poner(bM, 'textContent', 'Mejorar ' + m.costo + 'cr · ' + m.nombre); poner(bM, 'disabled', G.creditos < m.costo); }
-      else { poner(bM, 'textContent', 'Mejoras completas'); poner(bM, 'disabled', true); }
+      vV = true; vP = t.tipo === 'ametralladora';
       poner(bP, 'textContent', 'Objetivo: ' + D.prioridades[t.prioridad]);
       poner(bV, 'textContent', 'Vender +' + valorVenta(t) + 'cr');
     } else if (G.tipoSel) {
       const def = D.torres[G.tipoSel];
-      const s = {}; for (const k in def) if (!NO_STAT[k]) s[k] = def[k];
+      const s = statsDe(G.tipoSel, null);
       poner(tit, 'textContent', def.nombre + ' · ' + def.costo + 'cr');
       if (G.puntoSel) {
         poner(det, 'textContent', textoStats(G.tipoSel, s));
@@ -1009,10 +1061,11 @@
       }
     } else {
       poner(tit, 'textContent', G.oleada === 0 ? 'Prepara tu defensa' : 'Sin selección');
-      poner(det, 'textContent', 'Elige una torre de arriba y toca el lugar donde la quieres. Toca una torre ya construida para mejorarla o venderla.');
+      poner(det, 'textContent', 'Elige una torre de arriba y toca el lugar donde la quieres. Toca una torre ya construida para mejorar sus atributos o venderla.');
     }
     poner(sin, 'textContent', tSin);
-    mostrar(bC, vC); mostrar(bX, vX); mostrar(bM, vM); mostrar(bP, vP); mostrar(bV, vV);
+    mostrar(bC, vC); mostrar(bX, vX); mostrar(bP, vP); mostrar(bV, vV);
+    mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel);
 
     for (const b of document.querySelectorAll('#torres .torre[data-tipo]')) {
       const tipo = b.dataset.tipo;
@@ -1084,7 +1137,9 @@
       refrescarTodo();
     });
     $('btnCancelar').addEventListener('click', () => { G.puntoSel = null; G.tipoSel = null; refrescarTodo(); });
-    $('btnMejorar').addEventListener('click', () => { if (G.torreSel) mejorar(G.torreSel); refrescarTodo(); });
+    for (const b of $('atributos').children) {
+      b.addEventListener('click', () => { if (G.torreSel && b.dataset.id) mejorar(G.torreSel, b.dataset.id); refrescarTodo(); });
+    }
     $('btnPrioridad').addEventListener('click', () => { if (G.torreSel) cambiarPrioridad(G.torreSel); refrescarTodo(); });
     $('btnVender').addEventListener('click', () => { if (G.torreSel) vender(G.torreSel); refrescarTodo(); });
     // Si la app pasa a segundo plano, se pausa sola
@@ -1112,5 +1167,5 @@
   });
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, construir, mejorar, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();

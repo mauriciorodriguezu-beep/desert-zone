@@ -84,6 +84,21 @@
   .torre.sel { border-color: var(--azul); background: #0f1e35; box-shadow: inset 0 0 0 1px var(--azul); }
   .torre.caro .tc { color: var(--rojo); }
   .torre:disabled { opacity: .55; }
+  #atributos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .atrib {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    height: 58px; border-radius: 8px; border: 1px solid #2a6aaa; background: #0f2a4a; padding: 0 4px;
+  }
+  .atrib .an { font-size: 11px; color: #9cc9f2; display: flex; align-items: center; gap: 5px; }
+  .atrib .pp { display: inline-flex; gap: 2px; }
+  .atrib .pp i { width: 6px; height: 6px; border-radius: 50%; background: #1e3a5c; border: 1px solid #3f6c9c; }
+  .atrib .pp i.on { background: var(--oro); border-color: var(--oro); }
+  .atrib .av { font-size: 13px; font-weight: 600; color: var(--texto); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .atrib .ac { font-size: 11px; font-weight: 600; color: var(--oro); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .atrib:disabled { background: var(--caja); border-color: var(--linea); }
+  .atrib:disabled .ac { color: var(--rojo); }
+  .atrib.max .ac { color: var(--verde); }
+  .atrib:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
 
   #info { margin-top: 8px; background: var(--caja); border: 1px solid var(--linea); border-radius: 8px; padding: 8px 10px; height: 128px; display: flex; flex-direction: column; }
   #infoTitulo { font-size: 13px; font-weight: 600; }
@@ -133,6 +148,7 @@
   <div id="mapa"></div>
   <section id="panel">
     <div id="torres"></div>
+    <div id="atributos" hidden><button class="atrib" id="atrib0"></button><button class="atrib" id="atrib1"></button><button class="atrib" id="atrib2"></button></div>
     <div id="info">
       <div id="infoTitulo"></div>
       <div id="infoDet"></div>
