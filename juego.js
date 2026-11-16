@@ -14,32 +14,47 @@
   const C = D.celda, W = D.cols * C, H = D.filas * C;
   // Factor de nitidez: el lienzo se dibuja a 2x o 3x en pantallas de alta densidad
   const ESC = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1)));
-  const MAPA = D.mapas[D.mapaActual];
-  const TOTAL_OLEADAS = MAPA.oleadas.length;
   const $ = id => document.getElementById(id);
   const cr = n => Math.floor(n).toLocaleString('es-CL');
   const dec = n => String(Math.round(n * 100) / 100).replace('.', ',');
 
-  // Camino: puntos en px, tramos con su largo acumulado y celdas ocupadas
-  const PUNTOS = MAPA.camino.map(([c, r]) => ({ x: c * C + C / 2, y: r * C + C / 2 }));
-  const TRAMOS = [];
-  let LARGO = 0;
-  for (let i = 0; i < PUNTOS.length - 1; i++) {
-    const a = PUNTOS[i], b = PUNTOS[i + 1];
-    const l = Math.hypot(b.x - a.x, b.y - a.y);
-    TRAMOS.push({ a, b, l, ini: LARGO });
-    LARGO += l;
-  }
-  const CAMINO = new Set();
-  for (let i = 0; i < MAPA.camino.length - 1; i++) {
-    let [c, r] = MAPA.camino[i];
-    const [c2, r2] = MAPA.camino[i + 1];
-    const dc = Math.sign(c2 - c), dr = Math.sign(r2 - r);
-    for (;;) {
-      CAMINO.add(c + ',' + r);
-      if (c === c2 && r === r2) break;
-      c += dc; r += dr;
+  // Escenario en juego. cargarMapa() lo cambia: recalcula el camino y repinta el fondo.
+  let mapaId = null, MAPA = null, TOTAL_OLEADAS = 0;
+  let PUNTOS = [], TRAMOS = [], LARGO = 0, CAMINO = new Set();
+  let AIRE = null;   // ruta recta de los enemigos aéreos, de la entrada a la base
+  function cargarMapa(id) {
+    if (!D.mapas[id]) id = Object.keys(D.mapas)[0];
+    mapaId = id; MAPA = D.mapas[id]; TOTAL_OLEADAS = MAPA.oleadas.length;
+    // Camino: puntos en px, tramos con su largo acumulado y celdas ocupadas
+    PUNTOS = MAPA.camino.map(([c, r]) => ({ x: c * C + C / 2, y: r * C + C / 2 }));
+    TRAMOS = []; LARGO = 0;
+    for (let i = 0; i < PUNTOS.length - 1; i++) {
+      const a = PUNTOS[i], b = PUNTOS[i + 1];
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      TRAMOS.push({ a, b, l, ini: LARGO });
+      LARGO += l;
     }
+    CAMINO = new Set();
+    for (let i = 0; i < MAPA.camino.length - 1; i++) {
+      let [c, r] = MAPA.camino[i];
+      const [c2, r2] = MAPA.camino[i + 1];
+      const dc = Math.sign(c2 - c), dr = Math.sign(r2 - r);
+      for (;;) {
+        CAMINO.add(c + ',' + r);
+        if (c === c2 && r === r2) break;
+        c += dc; r += dr;
+      }
+    }
+    const a = PUNTOS[0], b = PUNTOS[PUNTOS.length - 1];
+    AIRE = { a, b, l: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
+    if (escena) pintarMapa();
+  }
+  // Posición y recorrido total de un enemigo: los aéreos vuelan en línea recta, el resto sigue el camino
+  const largoDe = e => e.def.aereo ? AIRE.l : LARGO;
+  function posDe(e) {
+    if (!e.def.aereo) return posEn(e.dist);
+    const k = Math.min(1, e.dist / AIRE.l);
+    return { x: AIRE.a.x + (AIRE.b.x - AIRE.a.x) * k, y: AIRE.a.y + (AIRE.b.y - AIRE.a.y) * k };
   }
   function posEn(d) {
     for (const t of TRAMOS) {
@@ -55,9 +70,12 @@
   // Guardado entre partidas (queda en el teléfono / navegador)
   const CLAVE = 'td_guardado_v1';
   function cargarGuardado() {
-    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0 };
-    try { return Object.assign(base, JSON.parse(localStorage.getItem(CLAVE) || '{}')); }
-    catch (e) { return base; }
+    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0, completados: {}, mejor: {}, mapa: null };
+    let g = base;
+    try { g = Object.assign(base, JSON.parse(localStorage.getItem(CLAVE) || '{}')); } catch (e) { /* sin guardado */ }
+    // Quien ganó antes de que existieran varios escenarios tiene completado el primero
+    if (g.victorias > 0 && !g.completados.desierto) { g.completados.desierto = true; g.mejor.desierto = g.mejorVidas; }
+    return g;
   }
   function guardar() {
     try { localStorage.setItem(CLAVE, JSON.stringify(G.guardado)); } catch (e) { /* sin almacenamiento: se juega igual */ }
@@ -275,9 +293,12 @@
 
   function crearEnemigo(tipo, oleada) {
     const def = D.enemigos[tipo];
-    const vida = def.vida * (1 + D.oleada.escalaVida * (oleada - 1));
-    const p = posEn(0);
-    G.enemigos.push({ tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: p.x, y: p.y, lento: 0, fragil: 0, congelado: 0, vivo: true });
+    const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
+    const vida = def.vida * (1 + escala * (oleada - 1));
+    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, vivo: true };
+    const p = posDe(e);
+    e.x = p.x; e.y = p.y;
+    G.enemigos.push(e);
   }
 
   function resolverEnemigo(e) {
@@ -298,7 +319,7 @@
       G.bajas++;
       G.guardado.bajasTotales++;
       if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡Jefe destruido! +' + e.def.premio + 'cr'); }
-      else G.efectos.push(e.tipo === 'blindado' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
+      else G.efectos.push(e.tipo === 'blindado' || e.tipo === 'dron' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
       flotar(e.x, e.y - 10, '+' + e.def.premio);
       resolverEnemigo(e);
     }
@@ -378,7 +399,7 @@
       if (!e.vivo || (e.def.aereo && !s.antiaerea)) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx * dx + dy * dy > r2) continue;
-      let v = e.dist;
+      let v = e.dist / largoDe(e) * 1e4;   // avance de 0 a 10.000, comparable entre tierra y aire
       if (t.prioridad === 'fuerte') v += e.vida * 1e5;
       else if (t.prioridad === 'rapido') v += e.def.vel * 1e5;
       if (v > mv) { mv = v; mejor = e; }
@@ -433,14 +454,14 @@
     for (const e of G.enemigos) {
       if (e.congelado > 0) continue;
       e.dist += e.def.vel * (1 - e.lento) * dt;
-      if (e.dist >= LARGO) {
+      if (e.dist >= largoDe(e)) {
         const quita = e.def.vidas || 1;
         G.vidas -= quita;
         aviso(e.def.jefe ? '¡El jefe llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
         resolverEnemigo(e);
         continue;
       }
-      const p = posEn(e.dist);
+      const p = posDe(e);
       e.x = p.x; e.y = p.y;
     }
 
@@ -491,6 +512,8 @@
     if (resultado === 'victoria') {
       G.guardado.victorias++;
       G.guardado.mejorVidas = Math.max(G.guardado.mejorVidas, G.vidas);
+      G.guardado.completados[mapaId] = true;
+      G.guardado.mejor[mapaId] = Math.max(G.guardado.mejor[mapaId] || 0, G.vidas);
     }
     guardar();
     G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
@@ -510,7 +533,7 @@
     alcance: { ametralladora: 0xffffff, crio: 0xdff6ff }
   };
   const ANCHO_CAMINO = 24;
-  let escena = null, gDin = null, txtJefe = null;
+  let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntrada = null, txtBase = null, TM = null;
   let flotantes = [];
 
   // Números "al azar" repetibles: el terreno sale igual en cada partida
@@ -566,44 +589,58 @@
     }
   }
 
+  // Aspecto del terreno según el escenario (campo "tema" de cada mapa en datos.js)
+  const TEMAS = {
+    desierto: {
+      suelo: 0xd8b878, claro: 0xe6cc94, oscuro: 0xc29e5e, ondas: true,
+      grano: [0x7a5a2c, 0xfff0c8], ruta: 0xa98250, rutaBorde: 0x86633a, huella: 0x8a6739, rutaGrano: [0x7a5a2c, 0xc9a66c],
+      roca: 0x8c7b63, rocaLuz: 0xb7a686, mata: [0x6f7a3a, 0x8a7a3e], texto: '#5a3d1a', polvo: [0xe9d3a4, 0xb8935a]
+    },
+    nieve: {
+      suelo: 0xe3ebf1, claro: 0xf8fcff, oscuro: 0xc3d2de, ondas: true,
+      grano: [0x9db4c6, 0xffffff], ruta: 0x93a2af, rutaBorde: 0x6e7e8c, huella: 0x7b8a97, rutaGrano: [0x5f6f7d, 0xdfe8ef],
+      roca: 0x5d6770, rocaLuz: 0xf4f9fc, mata: [0x7fb0cc, 0xa9cfe3], texto: '#3d5266', polvo: [0xffffff, 0xbcd0de]
+    }
+  };
+
   function dibujarFondo(g) {
-    const r = azar(20261111);
-    // Arena con manchas claras y oscuras
-    g.fillStyle(COL.arena, 1).fillRect(0, 0, W, H);
+    const r = azar(20261111 + mapaId.length * 97), T = TM;
+    // Suelo con manchas claras y oscuras
+    g.fillStyle(T.suelo, 1).fillRect(0, 0, W, H);
     for (let i = 0; i < 46; i++) {
-      g.fillStyle(r() < 0.5 ? COL.arenaClara : COL.arenaOscura, 0.10 + r() * 0.12)
+      g.fillStyle(r() < 0.5 ? T.claro : T.oscuro, 0.10 + r() * 0.12)
         .fillEllipse(r() * W, r() * H, 50 + r() * 110, 22 + r() * 46);
     }
-    // Ondas de duna
+    // Ondas de duna o de nieve
     for (let i = 0; i < 34; i++) {
       const x = r() * W, y = r() * H, largo = 24 + r() * 46;
-      g.lineStyle(1.2, COL.arenaOscura, 0.35);
+      g.lineStyle(1.2, T.oscuro, 0.35);
       g.beginPath(); g.moveTo(x, y);
       for (let k = 1; k <= 6; k++) g.lineTo(x + largo * k / 6, y + Math.sin(k * 1.1) * 2.2);
       g.strokePath();
-      g.lineStyle(1, COL.arenaClara, 0.4);
+      g.lineStyle(1, T.claro, 0.4);
       g.beginPath(); g.moveTo(x, y + 2);
       for (let k = 1; k <= 6; k++) g.lineTo(x + largo * k / 6, y + 2 + Math.sin(k * 1.1) * 2.2);
       g.strokePath();
     }
     // Grano
     for (let i = 0; i < 700; i++) {
-      g.fillStyle(r() < 0.5 ? 0x7a5a2c : 0xfff0c8, 0.16).fillRect(r() * W, r() * H, 1.2, 1.2);
+      g.fillStyle(T.grano[r() < 0.5 ? 0 : 1], 0.16).fillRect(r() * W, r() * H, 1.2, 1.2);
     }
 
-    // Camino de tierra con huellas de vehículos
-    bandaCamino(g, ANCHO_CAMINO + 5, COL.arenaOscura, 0.55);
-    bandaCamino(g, ANCHO_CAMINO, COL.rutaBorde, 1);
-    bandaCamino(g, ANCHO_CAMINO - 3, COL.ruta, 1);
-    bandaCamino(g, 14, COL.huella, 0.55);
-    bandaCamino(g, 7, COL.ruta, 1);
+    // Camino con huellas de vehículos
+    bandaCamino(g, ANCHO_CAMINO + 5, T.oscuro, 0.55);
+    bandaCamino(g, ANCHO_CAMINO, T.rutaBorde, 1);
+    bandaCamino(g, ANCHO_CAMINO - 3, T.ruta, 1);
+    bandaCamino(g, 14, T.huella, 0.55);
+    bandaCamino(g, 7, T.ruta, 1);
     for (let d = 0; d < LARGO; d += 3) {
       const p = posEn(d);
-      g.fillStyle(r() < 0.5 ? 0x7a5a2c : 0xc9a66c, 0.25)
+      g.fillStyle(T.rutaGrano[r() < 0.5 ? 0 : 1], 0.25)
         .fillRect(p.x + (r() - 0.5) * (ANCHO_CAMINO - 4), p.y + (r() - 0.5) * (ANCHO_CAMINO - 4), 1.5, 1.5);
     }
 
-    // Rocas y matorrales secos en las esquinas de algunas celdas libres
+    // Rocas y matorrales (o esquirlas de hielo) repartidos fuera del camino
     for (let c = 0; c < D.cols; c++) {
       for (let f = 0; f < D.filas; f++) {
         if (CAMINO.has(c + ',' + f)) continue;
@@ -616,15 +653,25 @@
           for (let k = 0; k < n; k++) {
             const rx = x + (r() - 0.5) * 8, ry = y + (r() - 0.5) * 8, t = 2.5 + r() * 3;
             g.fillStyle(COL.sombra, 0.22).fillEllipse(rx + 1.5, ry + 2, t * 2.4, t * 1.7);
-            g.fillStyle(0x8c7b63, 1).fillEllipse(rx, ry, t * 2.2, t * 1.6);
-            g.fillStyle(0xb7a686, 1).fillEllipse(rx - t * 0.3, ry - t * 0.3, t * 1.1, t * 0.7);
+            g.fillStyle(T.roca, 1).fillEllipse(rx, ry, t * 2.2, t * 1.6);
+            g.fillStyle(T.rocaLuz, 1).fillEllipse(rx - t * 0.3, ry - t * 0.3, t * 1.1, t * 0.7);
           }
         } else {
           for (let k = 0; k < 7; k++) {
             const a = r() * Math.PI * 2, l = 2 + r() * 4;
-            g.lineStyle(1.2, r() < 0.5 ? 0x6f7a3a : 0x8a7a3e, 0.9).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
+            g.lineStyle(1.2, T.mata[r() < 0.5 ? 0 : 1], 0.9).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
           }
         }
+      }
+    }
+
+    // Ruta aérea: línea punteada tenue, solo en escenarios con enemigos voladores
+    if (MAPA.oleadas.some(o => o.some(q => D.enemigos[q.tipo].aereo))) {
+      const n = Math.floor(AIRE.l / 12);
+      g.fillStyle(T.rutaBorde, 0.5);
+      for (let i = 2; i < n - 1; i++) {
+        const k = i / n;
+        g.fillCircle(AIRE.a.x + (AIRE.b.x - AIRE.a.x) * k, AIRE.a.y + (AIRE.b.y - AIRE.a.y) * k, 1.3);
       }
     }
 
@@ -646,6 +693,16 @@
     for (let k = 0; k < 6; k++) g.fillStyle(k % 2 ? 0x222222 : 0xf1c40f, 1).fillRect(bx, by + 12 + k * 4, 4, 4);
     g.fillStyle(0x1f6fc2, 1).fillCircle(bx + 13, by + 24, 4.5);
     g.fillStyle(0x8fc8ff, 1).fillCircle(bx + 12, by + 23, 2);
+  }
+
+  // Repinta el terreno del escenario actual y ubica los rótulos
+  function pintarMapa() {
+    TM = TEMAS[MAPA.tema] || TEMAS.desierto;
+    gFondo.clear();
+    dibujarFondo(gFondo);
+    const ini = posEn(C / 2), fin = PUNTOS[PUNTOS.length - 1];
+    txtEntrada.setPosition(4, ini.y - 30).setColor(TM.texto);
+    txtBase.setPosition(W - 3, fin.y - 36).setColor(TM.texto);
   }
 
   function circuloPunteado(g, x, y, r, color, alfa, ancho) {
@@ -750,7 +807,7 @@
   function dibujarEnemigo(g, e) {
     const x = e.x, y = e.y, blind = e.tipo === 'blindado', jefe = !!e.def.jefe;
     // Giro suave en las curvas (solo visual)
-    const meta = anguloEn(e.dist);
+    const meta = e.def.aereo ? AIRE.ang : anguloEn(e.dist);
     if (e.va == null) e.va = meta;
     let dif = meta - e.va;
     while (dif > Math.PI) dif -= Math.PI * 2;
@@ -799,6 +856,28 @@
       g.fillStyle(0x3a3634, 1).fillCircle(x + cs * 1, y + sn * 1, 4.6);
       g.lineStyle(1, 0x1c1a19, 1).strokeCircle(x + cs * 1, y + sn * 1, 4.6);
       g.fillStyle(0x6a6460, 1).fillCircle(x + cs * 0.2 - 0.8, y + sn * 0.2 - 0.8, 1.4);
+    } else if (e.tipo === 'corredor') {
+      // Vehículo ligero y rápido: carrocería en cuña con franja amarilla
+      poli(g, x + 1.5, y + 2.5, a, caja(-9, -5.5, 18, 11), COL.sombra, 0.26);
+      for (const [rx, ry] of [[-8, -6.8], [3, -6.8], [-8, 3.8], [3, 3.8]]) poli(g, x, y, a, caja(rx, ry, 5, 3), 0x15171a, 1);
+      poli(g, x, y, a, [[-9, -4], [4, -4], [10, -1.6], [10, 1.6], [4, 4], [-9, 4]], COL.rojo, 1, COL.rojoOsc, 1.1);
+      poli(g, x, y, a, caja(-3, -2.6, 5, 5.2), 0x2a2625, 1);
+      poli(g, x, y, a, caja(-9, -4, 2.5, 8), COL.oro, 1);
+    } else if (e.tipo === 'dron') {
+      // Dron de cuatro rotores: la sombra queda lejos porque vuela
+      g.fillStyle(COL.sombra, 0.2).fillEllipse(x + 8, y + 11, 18, 11);
+      poli(g, x, y, a + Math.PI / 4, caja(-9.5, -1.3, 19, 2.6), 0x3a3634, 1);
+      poli(g, x, y, a - Math.PI / 4, caja(-9.5, -1.3, 19, 2.6), 0x3a3634, 1);
+      for (let i = 0; i < 4; i++) {
+        const ar = a + Math.PI / 4 + i * Math.PI / 2, rx = x + Math.cos(ar) * 9.5, ry = y + Math.sin(ar) * 9.5;
+        g.fillStyle(0xcfd6dc, 0.55).fillCircle(rx, ry, 4.8);
+        g.lineStyle(1, 0x2a2625, 0.9).strokeCircle(rx, ry, 4.8);
+        const ap = G.t * 40 + i;
+        g.lineStyle(1.2, 0x2a2625, 0.8).lineBetween(rx - Math.cos(ap) * 4.2, ry - Math.sin(ap) * 4.2, rx + Math.cos(ap) * 4.2, ry + Math.sin(ap) * 4.2);
+      }
+      g.fillStyle(0x2a2625, 1).fillCircle(x, y, 4.6);
+      g.lineStyle(1, 0x000000, 1).strokeCircle(x, y, 4.6);
+      g.fillStyle(COL.rojo, 1).fillCircle(x, y, 2);
     } else {
       const vaiven = Math.sin(e.dist * 0.45) * 0.9;
       const px = x - Math.sin(a) * vaiven, py = y + Math.cos(a) * vaiven;
@@ -813,7 +892,7 @@
       g.fillStyle(0x7d858d, 1).fillCircle(px + cs * 0.6 - 1, py + sn * 0.6 - 1.2, 1.2);
     }
 
-    const rr = jefe ? 24 : blind ? 14 : 10;
+    const rr = jefe ? 24 : blind ? 14 : e.tipo === 'corredor' ? 12 : 10;
     if (e.congelado > 0) {
       g.fillStyle(COL.hielo, 0.6).fillCircle(x, y, rr);
       g.lineStyle(1.8, 0xffffff, 1).strokeCircle(x, y, rr);
@@ -896,8 +975,8 @@
         g.lineStyle(4, 0xffffff, 0.9 * (1 - k)).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k));
         g.lineStyle(2, COL.crioAzul, 1 - k).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k) - 3);
       } else if (f.k === 'polvo') {
-        g.fillStyle(0xe9d3a4, 0.75 * (1 - k)).fillCircle(f.x, f.y, 4 + 9 * k);
-        g.fillStyle(0xb8935a, 0.5 * (1 - k)).fillCircle(f.x + 3, f.y - 2, 3 + 6 * k);
+        g.fillStyle(TM.polvo[0], 0.75 * (1 - k)).fillCircle(f.x, f.y, 4 + 9 * k);
+        g.fillStyle(TM.polvo[1], 0.5 * (1 - k)).fillCircle(f.x + 3, f.y - 2, 3 + 6 * k);
       } else if (f.k === 'explosion') {
         const z = f.e || 1;
         g.fillStyle(0x2a2625, 0.5 * (1 - k)).fillCircle(f.x, f.y, (8 + 14 * k) * z);
@@ -924,11 +1003,11 @@
       const cam = this.cameras.main;
       cam.setZoom(ESC);
       cam.centerOn(W / 2, H / 2);
-      dibujarFondo(this.add.graphics());
+      gFondo = this.add.graphics();
       const estilo = { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: '#5a3d1a' };
-      const ini = posEn(C / 2), fin = PUNTOS[PUNTOS.length - 1];
-      this.add.text(4, ini.y - 30, 'ENTRADA', estilo).setResolution(ESC);
-      this.add.text(W - 3, fin.y - 36, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
+      txtEntrada = this.add.text(0, 0, 'ENTRADA', estilo).setResolution(ESC);
+      txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
+      pintarMapa();
       gDin = this.add.graphics().setDepth(2);
       txtJefe = this.add.text((W - 190) / 2 - 30, 5.5, 'JEFE', { fontFamily: 'system-ui, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#ffd23f' }).setResolution(ESC).setDepth(4).setVisible(false);
       this.input.mouse && this.input.mouse.disableContextMenu();
@@ -1151,10 +1230,34 @@
     tAviso = setTimeout(() => el.classList.remove('ver'), 1800);
   }
 
+  // Un escenario está abierto si no exige otro, si ya se completó el que exige, o si datos.js los abre todos
+  let mapaElegido = null;
+  const mapaAbierto = id => {
+    const m = D.mapas[id];
+    return !!m && (D.desbloquearTodo || !m.requiere || !!G.guardado.completados[m.requiere]);
+  };
+  function pintarSelector() {
+    const cont = $('veloMapas');
+    cont.innerHTML = '';
+    for (const id in D.mapas) {
+      const m = D.mapas[id], abierto = mapaAbierto(id), hecho = !!G.guardado.completados[id];
+      const b = document.createElement('button');
+      b.className = 'mapaBtn' + (id === mapaElegido ? ' sel' : '');
+      b.disabled = !abierto;
+      const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
+        : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
+      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + ' · ' + m.oleadas.length + ' oleadas</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
+      b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); });
+      cont.appendChild(b);
+    }
+  }
+
   function mostrarMenu() {
     const g = G.guardado;
     $('veloTitulo').textContent = D.nombre;
-    $('veloSub').textContent = MAPA.nombre + ' · ' + TOTAL_OLEADAS + ' oleadas';
+    $('veloSub').textContent = 'Elige un escenario';
+    mapaElegido = mapaId;
+    pintarSelector();
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
       : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
@@ -1164,9 +1267,13 @@
   function mostrarFinal() {
     const gano = G.fase === 'victoria';
     $('veloTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
-    $('veloSub').textContent = gano ? 'Superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'Caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS;
+    $('veloSub').textContent = MAPA.nombre + ' · ' + (gano ? 'superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
+    // Tras ganar, deja elegido el escenario que se acaba de abrir, si hay uno
+    mapaElegido = mapaId;
+    if (gano) for (const id in D.mapas) if (D.mapas[id].requiere === mapaId && !G.guardado.completados[id]) { mapaElegido = id; break; }
+    pintarSelector();
     $('veloDatos').innerHTML = '<div><b>' + G.vidas + '</b><span>vidas restantes</span></div><div><b>' + G.bajas + '</b><span>enemigos eliminados</span></div><div><b>' + cr(G.guardado.bajasTotales) + '</b><span>eliminados en total</span></div>';
-    $('veloBoton').textContent = 'Jugar de nuevo';
+    $('veloBoton').textContent = mapaElegido === mapaId ? 'Jugar de nuevo' : 'Jugar';
     $('velo').hidden = false;
     refrescarTodo();
   }
@@ -1181,7 +1288,12 @@
   }
 
   function conectarBotones() {
-    $('veloBoton').addEventListener('click', () => { $('velo').hidden = true; nuevaPartida(); });
+    $('veloBoton').addEventListener('click', () => {
+      $('velo').hidden = true;
+      if (mapaElegido && mapaElegido !== mapaId && mapaAbierto(mapaElegido)) cargarMapa(mapaElegido);
+      G.guardado.mapa = mapaId;
+      nuevaPartida();
+    });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
     $('btnVel').addEventListener('click', () => { G.vel = G.vel === 1 ? 2 : 1; refrescarTodo(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
@@ -1222,6 +1334,7 @@
   G.enlaces = [];
   document.title = D.nombre;
   $('veloCredito').textContent = 'Creado por ' + D.autor + ' · Versión ' + D.version;
+  cargarMapa(mapaAbierto(G.guardado.mapa) ? G.guardado.mapa : Object.keys(D.mapas)[0]);
   armarBotonesTorre();
   conectarBotones();
   mostrarMenu();
@@ -1237,5 +1350,5 @@
   });
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, cargarMapa, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();
