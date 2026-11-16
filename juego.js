@@ -74,7 +74,7 @@
     pendientes: {},          // enemigos que faltan por resolver en cada oleada
     torres: [], enemigos: [], efectos: [],
     vel: 1, pausa: false,
-    tipoSel: null, celdaSel: null, torreSel: null,
+    tipoSel: null, puntoSel: null, torreSel: null,
     bajas: 0, t: 0,
     guardado: cargarGuardado()
   };
@@ -86,7 +86,7 @@
     G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.enlaces = [];
-    G.pausa = false; G.tipoSel = null; G.celdaSel = null; G.torreSel = null;
+    G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
     G.bajas = 0; G.t = 0;
     G.guardado.partidas++;
     guardar();
@@ -108,11 +108,40 @@
     t.s = s;
   }
 
-  function torreEn(c, r) { return G.torres.find(t => t.c === c && t.r === r) || null; }
-  function celdaLibre(c, r) {
-    return c >= 0 && r >= 0 && c < D.cols && r < D.filas && !CAMINO.has(c + ',' + r) && !torreEn(c, r);
+  // ── Colocación libre: las torres van en cualquier punto del campo ──
+  const COLOC = D.colocacion, MEDIA = COLOC.tamTorre / 2;
+  // Torre que está bajo el punto (x, y), si hay alguna
+  function torreEn(x, y) {
+    let mejor = null, md = Infinity;
+    for (const t of G.torres) {
+      const dx = Math.abs(x - t.x), dy = Math.abs(y - t.y);
+      if (dx <= MEDIA + 2 && dy <= MEDIA + 2 && dx + dy < md) { md = dx + dy; mejor = t; }
+    }
+    return mejor;
   }
-  const contiguas = (a, b) => Math.abs(a.c - b.c) <= 1 && Math.abs(a.r - b.r) <= 1 && !(a.c === b.c && a.r === b.r);
+  // ¿Cabe una torre con centro en (x, y)? No puede salirse del campo, pisar el camino, la base ni otra torre
+  function puedeConstruir(x, y) {
+    if (x < MEDIA || y < MEDIA || x > W - MEDIA || y > H - MEDIA) return false;
+    for (const t of TRAMOS) if (distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < COLOC.claroCamino) return false;
+    const fin = PUNTOS[PUNTOS.length - 1];
+    if (x > W - 24 - MEDIA && Math.abs(y - fin.y) < 24 + MEDIA) return false;
+    for (const t of G.torres) if (Math.abs(x - t.x) < COLOC.tamTorre && Math.abs(y - t.y) < COLOC.tamTorre) return false;
+    return true;
+  }
+  // Si el punto tocado no sirve, busca el lugar válido más cercano (hasta 30 px)
+  function ajustar(x, y) {
+    x = Math.max(MEDIA, Math.min(W - MEDIA, x)); y = Math.max(MEDIA, Math.min(H - MEDIA, y));
+    if (puedeConstruir(x, y)) return { x, y, ok: true };
+    for (let r = 2; r <= 30; r += 2) {
+      for (let i = 0; i < 24; i++) {
+        const a = i * Math.PI / 12, nx = x + Math.cos(a) * r, ny = y + Math.sin(a) * r;
+        if (puedeConstruir(nx, ny)) return { x: nx, y: ny, ok: true };
+      }
+    }
+    return { x, y, ok: false };
+  }
+  // Dos torres forman combo si sus centros están a distCombo px o menos
+  const contiguas = (a, b) => a !== b && Math.hypot(a.x - b.x, a.y - b.y) <= COLOC.distCombo;
   function sinergiaDe(tipoA, tipoB) {
     return D.sinergias.filter(sg =>
       (sg.entre[0] === tipoA && sg.entre[1] === tipoB) || (sg.entre[0] === tipoB && sg.entre[1] === tipoA));
@@ -132,7 +161,7 @@
           for (const t of [a, b]) {
             if (t.tipo === sg.para && !t.sin.includes(sg.id)) t.sin.push(sg.id);
           }
-          const clave = a.c + ',' + a.r + '|' + b.c + ',' + b.r + '|' + sg.id;
+          const clave = a.x + ',' + a.y + '|' + b.x + ',' + b.y + '|' + sg.id;
           G.enlaces.push({ a, b, sg, clave, carga: previas[clave] || 0, tDisparo: -9 });
           a.nEnl++; b.nEnl++;
         }
@@ -140,22 +169,23 @@
     }
   }
 
-  // Qué sinergias se activarían si se construye "tipo" en la celda (c, r)
-  function sinergiasPrevistas(tipo, c, r) {
+  // Qué combos se activarían si se construye "tipo" en el punto (x, y)
+  function sinergiasPrevistas(tipo, x, y) {
     const nombres = new Set();
     for (const t of G.torres) {
-      if (!contiguas({ c, r }, t)) continue;
+      if (!contiguas({ x, y }, t)) continue;
       for (const sg of sinergiaDe(tipo, t.tipo)) nombres.add(sg.nombre + ' (' + sg.combo.texto + ')');
     }
     return [...nombres];
   }
 
-  function construir(tipo, c, r) {
+  function construir(tipo, x, y) {
     const def = D.torres[tipo];
-    if (!def || !celdaLibre(c, r) || G.creditos < def.costo) return null;
+    x = Math.round(x); y = Math.round(y);
+    if (!def || !puedeConstruir(x, y) || G.creditos < def.costo) return null;
     G.creditos -= def.costo;
     const t = {
-      tipo, c, r, x: c * C + C / 2, y: r * C + C / 2,
+      tipo, x, y,
       nivel: 0, invertido: def.costo, prioridad: 'primero',
       enfria: 0, ang: -Math.PI / 2, tCong: 0, sin: []
     };
@@ -441,7 +471,7 @@
       G.guardado.mejorVidas = Math.max(G.guardado.mejorVidas, G.vidas);
     }
     guardar();
-    G.tipoSel = null; G.celdaSel = null; G.torreSel = null;
+    G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
     mostrarFinal();
   }
 
@@ -550,11 +580,6 @@
       g.fillStyle(r() < 0.5 ? 0x7a5a2c : 0xc9a66c, 0.25)
         .fillRect(p.x + (r() - 0.5) * (ANCHO_CAMINO - 4), p.y + (r() - 0.5) * (ANCHO_CAMINO - 4), 1.5, 1.5);
     }
-
-    // Cuadrícula tenue de celdas
-    g.lineStyle(1, 0x6b4a1e, 0.13);
-    for (let c = 1; c < D.cols; c++) g.lineBetween(c * C, 0, c * C, H);
-    for (let f = 1; f < D.filas; f++) g.lineBetween(0, f * C, W, f * C);
 
     // Rocas y matorrales secos en las esquinas de algunas celdas libres
     for (let c = 0; c < D.cols; c++) {
@@ -759,14 +784,6 @@
     const g = gDin;
     g.clear();
 
-    // Celdas donde se puede construir (mientras hay un tipo de torre elegido)
-    if (G.tipoSel && G.fase === 'jugando') {
-      g.fillStyle(0xffffff, 0.13);
-      for (let c = 0; c < D.cols; c++) for (let f = 0; f < D.filas; f++) {
-        if (celdaLibre(c, f)) g.fillRoundedRect(c * C + 3, f * C + 3, C - 6, C - 6, 4);
-      }
-    }
-
     // Zonas de frío activas
     for (const t of G.torres) {
       if (t.tipo === 'crio' && t.activa) {
@@ -775,15 +792,28 @@
       }
     }
 
-    // Celda elegida para construir: resalta, muestra alcance y la torre "fantasma"
-    if (G.celdaSel && G.tipoSel) {
-      const { c, r } = G.celdaSel, x = c * C + C / 2, y = r * C + C / 2, def = D.torres[G.tipoSel];
-      marcarAlcance(g, x, y, def.alcance, G.tipoSel);
-      g.lineStyle(2, 0xffffff, 0.9).strokeRoundedRect(c * C + 2, r * C + 2, C - 4, C - 4, 5);
+    // Lugar elegido para construir: muestra alcance, combos que se activarían y la torre "fantasma"
+    if (G.puntoSel && G.tipoSel) {
+      const { x, y, ok } = G.puntoSel, def = D.torres[G.tipoSel];
+      // Zona de combo de las torres cercanas que combinan con la que se va a construir
       for (const t of G.torres) {
-        if (contiguas({ c, r }, t) && sinergiaDe(G.tipoSel, t.tipo).length) enlace(g, x, y, t.x, t.y, 0.9);
+        if (sinergiaDe(G.tipoSel, t.tipo).length && Math.hypot(t.x - x, t.y - y) < 130) {
+          circuloPunteado(g, t.x, t.y, COLOC.distCombo, 0x3a2a10, 0.35, 2.5);
+          circuloPunteado(g, t.x, t.y, COLOC.distCombo, COL.oro, 0.85, 1.2);
+        }
+      }
+      marcarAlcance(g, x, y, def.alcance, G.tipoSel);
+      if (ok) {
+        for (const t of G.torres) {
+          if (contiguas({ x, y }, t) && sinergiaDe(G.tipoSel, t.tipo).length) enlace(g, x, y, t.x, t.y, 0.9);
+        }
+        g.lineStyle(2, 0xffffff, 0.9).strokeRoundedRect(x - 18, y - 18, 36, 36, 7);
       }
       dibujarTorre(g, { tipo: G.tipoSel, x, y, ang: -Math.PI / 2, nivel: 0 }, 0.7);
+      if (!ok) {
+        g.fillStyle(0xe5342a, 0.45).fillRoundedRect(x - 17, y - 17, 34, 34, 6);
+        g.lineStyle(2.5, 0xffffff, 0.95).lineBetween(x - 8, y - 8, x + 8, y + 8).lineBetween(x + 8, y - 8, x - 8, y + 8);
+      }
     }
 
     if (G.torreSel) marcarAlcance(g, G.torreSel.x, G.torreSel.y, G.torreSel.s.alcance, G.torreSel.tipo);
@@ -841,10 +871,18 @@
       this.add.text(W - 3, fin.y - 36, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
       gDin = this.add.graphics().setDepth(2);
       this.input.mouse && this.input.mouse.disableContextMenu();
+      // Tocar ubica la torre; arrastrar el dedo la mueve antes de confirmar
+      let arrastre = false;
       this.input.on('pointerdown', p => {
         const pt = cam.getWorldPoint(p.x, p.y);
-        tocarMapa(Math.floor(pt.x / C), Math.floor(pt.y / C));
+        arrastre = tocarMapa(pt.x, pt.y);
       });
+      this.input.on('pointermove', p => {
+        if (!arrastre || !p.isDown || !G.tipoSel || G.fase !== 'jugando') return;
+        const pt = cam.getWorldPoint(p.x, p.y);
+        G.puntoSel = ajustar(pt.x, pt.y);
+      });
+      this.input.on('pointerup', () => { arrastre = false; });
       listo = true;
       refrescarTodo();
     },
@@ -872,13 +910,16 @@
   let listo = false, tUI = 0;
 
   // ───────────────────────── 6. INTERFAZ HTML ─────────────────────────
-  function tocarMapa(c, r) {
-    if (G.fase !== 'jugando') return;
-    const t = torreEn(c, r);
-    if (t) { G.torreSel = t; G.celdaSel = null; G.tipoSel = null; }
-    else if (G.tipoSel && celdaLibre(c, r)) { G.celdaSel = { c, r }; G.torreSel = null; }
-    else { G.torreSel = null; G.celdaSel = null; }
+  // Devuelve true si quedó una torre por ubicar (para permitir arrastrarla)
+  function tocarMapa(x, y) {
+    if (G.fase !== 'jugando') return false;
+    let colocando = false;
+    const t = torreEn(x, y);
+    if (t) { G.torreSel = t; G.puntoSel = null; G.tipoSel = null; }
+    else if (G.tipoSel) { G.puntoSel = ajustar(x, y); G.torreSel = null; colocando = true; }
+    else { G.torreSel = null; G.puntoSel = null; }
     refrescarTodo();
+    return colocando;
   }
 
   // Escribe en el DOM solo si el valor cambió (evita perder toques al redibujar)
@@ -901,7 +942,7 @@
       b.innerHTML = ICONO[tipo] + '<span class="tn">' + def.corto + '</span><span class="tc">' + def.costo + 'cr</span>';
       b.addEventListener('click', () => {
         if (G.fase !== 'jugando') return;
-        G.tipoSel = G.tipoSel === tipo && !G.celdaSel ? null : tipo;
+        G.tipoSel = G.tipoSel === tipo && !G.puntoSel ? null : tipo;
         G.torreSel = null;
         refrescarTodo();
       });
@@ -955,20 +996,20 @@
       const def = D.torres[G.tipoSel];
       const s = {}; for (const k in def) if (!NO_STAT[k]) s[k] = def[k];
       poner(tit, 'textContent', def.nombre + ' · ' + def.costo + 'cr');
-      if (G.celdaSel) {
+      if (G.puntoSel) {
         poner(det, 'textContent', textoStats(G.tipoSel, s));
-        const prev = sinergiasPrevistas(G.tipoSel, G.celdaSel.c, G.celdaSel.r);
-        tSin = prev.length ? 'Activa combo: ' + prev.join(' · ') : 'Sin combo en esta celda';
+        const prev = G.puntoSel.ok ? sinergiasPrevistas(G.tipoSel, G.puntoSel.x, G.puntoSel.y) : [];
+        tSin = !G.puntoSel.ok ? 'Aquí no cabe: muévela lejos del camino y de otras torres.' : prev.length ? 'Activa combo: ' + prev.join(' · ') : 'Sin combo aquí. Acércala a otra torre para activarlo.';
         vC = true; vX = true;
-        poner(bC, 'textContent', G.creditos >= def.costo ? 'Construir ' + def.costo + 'cr' : 'Faltan ' + (def.costo - G.creditos) + 'cr');
-        poner(bC, 'disabled', G.creditos < def.costo);
+        poner(bC, 'textContent', !G.puntoSel.ok ? 'No cabe aquí' : G.creditos >= def.costo ? 'Construir ' + def.costo + 'cr' : 'Faltan ' + (def.costo - G.creditos) + 'cr');
+        poner(bC, 'disabled', !G.puntoSel.ok || G.creditos < def.costo);
       } else {
         poner(det, 'textContent', def.desc);
-        tSin = 'Toca una celda libre del mapa para ubicarla.';
+        tSin = 'Toca el lugar del mapa donde la quieres. Puedes arrastrarla antes de construir.';
       }
     } else {
       poner(tit, 'textContent', G.oleada === 0 ? 'Prepara tu defensa' : 'Sin selección');
-      poner(det, 'textContent', 'Elige una torre de arriba y toca una celda libre. Toca una torre ya construida para mejorarla o venderla.');
+      poner(det, 'textContent', 'Elige una torre de arriba y toca el lugar donde la quieres. Toca una torre ya construida para mejorarla o venderla.');
     }
     poner(sin, 'textContent', tSin);
     mostrar(bC, vC); mostrar(bX, vX); mostrar(bM, vM); mostrar(bP, vP); mostrar(bV, vV);
@@ -1018,7 +1059,7 @@
     $('veloSub').textContent = MAPA.nombre + ' · ' + TOTAL_OLEADAS + ' oleadas';
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
-      : '<p>Defiende la base. Construye torres junto al camino y ponlas contiguas: cargan un combo, un ataque especial que se dispara solo.</p>';
+      : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
     $('veloBoton').textContent = 'Jugar';
     $('velo').hidden = false;
   }
@@ -1038,11 +1079,11 @@
     $('btnVel').addEventListener('click', () => { G.vel = G.vel === 1 ? 2 : 1; refrescarTodo(); });
     $('btnPausa').addEventListener('click', () => { if (G.fase === 'jugando') { G.pausa = !G.pausa; refrescarTodo(); } });
     $('btnConstruir').addEventListener('click', () => {
-      if (!G.celdaSel || !G.tipoSel) return;
-      if (construir(G.tipoSel, G.celdaSel.c, G.celdaSel.r)) G.celdaSel = null;
+      if (!G.puntoSel || !G.tipoSel) return;
+      if (construir(G.tipoSel, G.puntoSel.x, G.puntoSel.y)) G.puntoSel = null;
       refrescarTodo();
     });
-    $('btnCancelar').addEventListener('click', () => { G.celdaSel = null; G.tipoSel = null; refrescarTodo(); });
+    $('btnCancelar').addEventListener('click', () => { G.puntoSel = null; G.tipoSel = null; refrescarTodo(); });
     $('btnMejorar').addEventListener('click', () => { if (G.torreSel) mejorar(G.torreSel); refrescarTodo(); });
     $('btnPrioridad').addEventListener('click', () => { if (G.torreSel) cambiarPrioridad(G.torreSel); refrescarTodo(); });
     $('btnVender').addEventListener('click', () => { if (G.torreSel) vender(G.torreSel); refrescarTodo(); });
@@ -1071,5 +1112,5 @@
   });
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, construir, mejorar, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, CAMINO };
+  window.TD = { G, D, construir, mejorar, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();

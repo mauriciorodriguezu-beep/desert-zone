@@ -1,7 +1,7 @@
 /* sw.js — guarda una copia del juego en el teléfono para que funcione sin internet.
    Con internet siempre baja la versión más nueva; sin internet usa la copia guardada.
    Al publicar una versión nueva, cambiar el número de CACHE. */
-const CACHE = 'desert-zone-v0.1.1';
+const CACHE = 'desert-zone-v0.1.2';
 const ARCHIVOS = [
   './', 'index.html', 'datos.js', 'juego.js', 'phaser.min.js', 'manifest.webmanifest',
   'iconos/icono-32.png', 'iconos/icono-180.png', 'iconos/icono-192.png', 'iconos/icono-512.png', 'iconos/icono.ico'

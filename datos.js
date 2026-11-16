@@ -5,12 +5,19 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.1.1',
+  version: '0.1.2',
 
-  // Tablero: 9 columnas x 11 filas de 40 px
+  // Campo de 360 x 440 px. La cuadrícula de 40 px solo se usa para trazar el camino;
+  // las torres se ubican libremente.
   celda: 40,
   cols: 9,
   filas: 11,
+
+  colocacion: {
+    tamTorre: 30,     // lado de la torre; dos torres no pueden montarse
+    claroCamino: 27,  // distancia mínima del centro de la torre al eje del camino
+    distCombo: 48     // dos torres forman combo si sus centros están a esta distancia o menos
+  },
 
   inicio: { creditos: 200, vidas: 20 },
 
@@ -64,7 +71,7 @@ const DATOS = {
     { corto: 'Misiles', costo: 200 }
   ],
 
-  /* COMBOS: dos torres en celdas contiguas (incluye diagonal) forman un enlace con un combo.
+  /* COMBOS: dos torres pegadas (centros a colocacion.distCombo px o menos) forman un enlace con un combo.
      - Bono permanente: el campo "para" indica qué torre lo recibe (una sola vez aunque tenga varias vecinas).
      - Ataque especial ("combo"): el círculo entre las dos torres se va llenando mientras alguna de las dos
        trabaja (dispara o frena enemigos). Al llenarse, el ataque sale solo.
