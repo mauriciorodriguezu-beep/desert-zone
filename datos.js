@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.12',
+  version: '0.12.1',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -23,7 +23,7 @@ const DATOS = {
     distCombo: 48     // dos torres forman combo si sus centros están a esta distancia o menos
   },
 
-  inicio: { creditos: 300, vidas: 20 },
+  inicio: { creditos: 20000, vidas: 20 },   // PRUEBAS: 20.000 créditos para probar todas las torres. Valor normal: 300
 
   // Al vender se recupera este % de TODO lo invertido (compra + mejoras)
   venta: 0.6,
