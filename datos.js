@@ -18,11 +18,11 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.16',
+  version: '0.17',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
-  desbloquearTodo: true,
+  desbloquearTodo: false,   // true solo para pruebas: abre todos los escenarios y torres combo
 
   // Campo de 440 x 540 px (11 columnas x 13,5 filas de 40 px). La cuadrícula solo se usa para
   // trazar el camino; las torres se ubican libremente.
@@ -36,7 +36,7 @@ const DATOS = {
     distCombo: 48     // dos torres forman combo si sus centros están a esta distancia o menos
   },
 
-  inicio: { creditos: 20000, vidas: 20 },   // PRUEBAS: 20.000 créditos para probar todas las torres. Valor normal: 300
+  inicio: { creditos: 300, vidas: 20 },
 
   // Al vender se recupera este % de TODO lo invertido (compra + mejoras)
   venta: 0.6,
