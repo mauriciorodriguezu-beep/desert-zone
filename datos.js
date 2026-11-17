@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.6.1',
+  version: '0.6.2',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -217,7 +217,8 @@ const DATOS = {
                 resist: { fisico: 0.5, energia: 1.5, explosivo: 1 } },
     corredor: { nombre: 'Corredor', vida: 35,  vel: 90, premio: 8, aereo: false,
                 resist: { fisico: 1,   energia: 1,   explosivo: 0.5 } },
-    // Aéreo: vuela en línea recta de la entrada a la base, no sigue el camino.
+    // Aéreo: vuela sobre el mismo camino que las tropas de tierra.
+    // (con rutaRecta: true volaría en línea recta de la entrada a la base)
     // Solo le disparan las torres antiaéreas y el frío no le afecta.
     dron:     { nombre: 'Dron',     vida: 70,  vel: 60, premio: 12, aereo: true,
                 resist: { fisico: 1,   energia: 1,   explosivo: 1.5 } },
@@ -280,6 +281,7 @@ const DATOS = {
     artico: {
       nombre: 'Base ártica', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
       totalOleadas: 50,
+      escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [4, 1], [4, 4], [8, 4], [8, 8], [2, 8], [2, 11], [11, 11]],
       oleadas: [

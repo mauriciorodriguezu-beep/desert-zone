@@ -54,9 +54,11 @@
     if (escena) pintarMapa();
   }
   // Posición y recorrido total de un enemigo: los aéreos vuelan en línea recta, el resto sigue el camino
-  const largoDe = e => e.def.aereo ? AIRE.l : LARGO;
+  // (solo vuelan recto los aéreos marcados con rutaRecta en datos.js; hoy ninguno)
+  const recto = def => !!(def.aereo && def.rutaRecta);
+  const largoDe = e => recto(e.def) ? AIRE.l : LARGO;
   function posDe(e) {
-    if (!e.def.aereo) return posEn(e.dist);
+    if (!recto(e.def)) return posEn(e.dist);
     const k = Math.min(1, e.dist / AIRE.l);
     return { x: AIRE.a.x + (AIRE.b.x - AIRE.a.x) * k, y: AIRE.a.y + (AIRE.b.y - AIRE.a.y) * k };
   }
@@ -801,7 +803,7 @@
     }
 
     // Ruta aérea: línea punteada tenue, solo en escenarios con enemigos voladores
-    if (MAPA.oleadas.some(o => o.some(q => D.enemigos[q.tipo].aereo))) {
+    if (MAPA.oleadas.some(o => o.some(q => recto(D.enemigos[q.tipo])))) {
       const n = Math.floor(AIRE.l / 12);
       g.fillStyle(T.rutaBorde, 0.5);
       for (let i = 2; i < n - 1; i++) {
@@ -972,7 +974,7 @@
   function dibujarEnemigo(g, e) {
     const x = e.x, y = e.y, blind = e.tipo === 'blindado', jefe = !!e.def.jefe;
     // Giro suave en las curvas (solo visual)
-    const meta = e.def.aereo ? AIRE.ang : anguloEn(e.dist);
+    const meta = recto(e.def) ? AIRE.ang : anguloEn(e.dist);
     if (e.va == null) e.va = meta;
     let dif = meta - e.va;
     while (dif > Math.PI) dif -= Math.PI * 2;
@@ -1585,7 +1587,7 @@
     let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además un refuerzo de vida que parte en ' + pct(rf.extra) + ' y crece cada vez más rápido, hasta ' + pct(rf.extraEn) + ' en la oleada ' + rf.hasta + '.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
     for (const id in D.enemigos) {
       const e = D.enemigos[id], notas = [];
-      if (e.aereo) notas.push('Vuela en línea recta de la entrada a la base. Solo le disparan las torres que atacan aire y el frío no le afecta.');
+      if (e.aereo) notas.push('Vuela sobre el mismo camino que las tropas de tierra. Solo le disparan las torres que atacan aire y el frío no le afecta.');
       for (const k in e.resist) {
         if (e.resist[k] < 1) notas.push('Resiste el daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
         if (e.resist[k] > 1) notas.push('Débil al daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
