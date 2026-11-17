@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.6',
+  version: '0.6.1',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -34,8 +34,10 @@ const DATOS = {
     esperaSeg: 10,          // cuenta regresiva entre oleadas
     bonoAdelantoPorSeg: 3,  // cr por cada segundo adelantado (con enemigos vivos cuenta como esperaSeg completos)
     escalaVida: 0.27,       // cada oleada los enemigos tienen +27% de vida respecto de la primera
-    // Refuerzo: desde la oleada "desde", todos los enemigos tienen "extra" más de vida (0.05 = 5%)
-    refuerzo: { desde: 20, extra: 0.05 }
+    // Refuerzo de vida para todos los enemigos, con curva cuadrática (suave al principio, fuerte al final):
+    // parte en "extra" en la oleada "desde" y llega a "extraEn" en la oleada "hasta" (0.05 = 5%).
+    // Para endurecer el final de la campaña basta subir "extraEn".
+    refuerzo: { desde: 20, extra: 0.05, hasta: 50, extraEn: 0.20 }
   },
 
   /* OLEADAS GENERADAS: cada mapa trae escritas sus primeras oleadas; de ahí en adelante se generan solas

@@ -333,7 +333,11 @@
   function multVida(n) {
     const r = D.oleada.refuerzo, inf = D.infinito;
     let m = 1;
-    if (r && n >= r.desde) m *= 1 + r.extra;
+    if (r && n >= r.desde) {
+      // curva cuadrática: "extra" en la oleada "desde" y "extraEn" en la oleada "hasta"; después sigue creciendo
+      const c = r.hasta > r.desde ? ((r.extraEn || r.extra) - r.extra) / ((r.hasta - r.desde) * (r.hasta - r.desde)) : 0;
+      m *= 1 + r.extra + c * (n - r.desde) * (n - r.desde);
+    }
     if (modo === 'infinito' && inf && n > inf.desde) m *= Math.pow(1 + inf.extraPorOleada, n - inf.desde);
     return m;
   }
@@ -1578,7 +1582,7 @@
   function manualEnemigos() {
     const esc = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
     const rf = D.oleada.refuerzo;
-    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además ' + pct(rf.extra) + ' más de vida.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
+    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además un refuerzo de vida que parte en ' + pct(rf.extra) + ' y crece cada vez más rápido, hasta ' + pct(rf.extraEn) + ' en la oleada ' + rf.hasta + '.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
     for (const id in D.enemigos) {
       const e = D.enemigos[id], notas = [];
       if (e.aereo) notas.push('Vuela en línea recta de la entrada a la base. Solo le disparan las torres que atacan aire y el frío no le afecta.');
