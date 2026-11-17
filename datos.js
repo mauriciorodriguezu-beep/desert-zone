@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.20.0',
+  version: '0.21.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -480,6 +480,30 @@ const DATOS = {
     // Solo le disparan las torres antiaéreas y el frío no le afecta.
     dron:     { nombre: 'Dron',     vida: 70,  vel: 60, premio: 12, aereo: true,
                 resist: { fisico: 1,   energia: 1,   explosivo: 1.5 } },
+    // ── Atacantes especiales: cada escenario (salvo Puesto Duna) tiene el suyo; en el Núcleo aparecen todos ──
+    // Infiltrador: cada "cada" segundos se vuelve invisible por "dura" segundos. Invisible, ninguna torre lo
+    // apunta, pero lo dañan las minas, las explosiones, las ondas, el haz del láser y los combos de área.
+    infiltrador: { nombre: 'Infiltrador', vida: 70, vel: 58, premio: 14, aereo: false, especial: true,
+                   camuflaje: { cada: 3.5, dura: 2.2 },
+                   aviso: 'Se vuelve invisible a ratos: las torres no lo apuntan, pero minas, explosiones y láser sí lo alcanzan',
+                   resist: { fisico: 1, energia: 1, explosivo: 1 } },
+    // Calefactor: no se congela ni se frena, y cada "cada" segundos lanza una onda de calor que descongela a los
+    // enemigos a menos de "radio" px y los deja "inmune" segundos sin que el frío los afecte.
+    calefactor:  { nombre: 'Calefactor', vida: 190, vel: 32, premio: 24, aereo: false, especial: true,
+                   noCongela: true, resFrio: 0, calor: { cada: 4.5, radio: 75, inmune: 2.5 },
+                   aviso: 'No se congela y su onda de calor descongela a los enemigos cercanos: mátalo primero',
+                   resist: { fisico: 1, energia: 0.75, explosivo: 1 } },
+    // Nodriza: transporte lento y blindado; al ser destruido suelta "crias" enemigos del tipo indicado (con "vidaCria" de su vida).
+    nodriza:     { nombre: 'Nodriza', vida: 460, vel: 21, premio: 30, aereo: false, especial: true,
+                   cria: { tipo: 'corredor', n: 5, vidaCria: 0.6 },
+                   aviso: 'Al destruirla suelta 5 rastreadores: mátala lejos de la base',
+                   resist: { fisico: 0.75, energia: 1, explosivo: 1 } },
+    // Saboteador EMP: cada "cada" segundos apaga por "dura" segundos las torres a menos de "radio" px
+    // (no disparan ni cargan combos ni berserk).
+    saboteador:  { nombre: 'Saboteador EMP', vida: 240, vel: 29, premio: 32, aereo: false, especial: true,
+                   emp: { cada: 4, radio: 80, dura: 3 },
+                   aviso: 'Su pulso EMP apaga las torres cercanas por unos segundos: destrúyelo en la primera vuelta',
+                   resist: { fisico: 1, energia: 0.6, explosivo: 1 } },
     jefe:      { nombre: 'Coloso',       vida: 1000, vel: 24, premio: 100, aereo: false, jefe: true,
                  vidas: 5, resFrio: 0.5, noCongela: true,
                  resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } },
@@ -547,6 +571,8 @@ const DATOS = {
       // columna 4 cruzando su propio tramo en (4, 6). Oleadas: las del desierto con 10% más enemigos,
       // corredores desde la oleada 3 y drones desde la 15.
       camino: [[-1, 6], [9, 6], [9, 2], [4, 2], [4, 11], [11, 11], [11, 14], [13, 14]],
+      // Atacantes especiales: desde la oleada "desde", cada "cada" oleadas; salen "n" (+1 cada "mas" oleadas)
+      especiales: [{ tipo: 'infiltrador', desde: 8, cada: 3, n: 2, mas: 10 }],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 7,  cada: 1.2 }],
         /*  2 */ [{ tipo: 'soldado', n: 11, cada: 1.0 }],
@@ -588,6 +614,7 @@ const DATOS = {
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [5, 1], [5, 5], [10, 5], [10, 10], [2, 10], [2, 13], [13, 13]],
+      especiales: [{ tipo: 'calefactor', desde: 8, cada: 3, n: 1, mas: 10 }],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 8,  cada: 1.0 }],
         /*  2 */ [{ tipo: 'soldado', n: 10, cada: 0.9 }],
@@ -633,6 +660,7 @@ const DATOS = {
         [[-1, 2], [4, 2], [4, 7], [7, 7], [7, 11], [2, 11], [2, 13], [13, 13]],
         [[10, -1], [10, 5], [7, 5], [7, 11], [2, 11], [2, 13], [13, 13]]
       ],
+      especiales: [{ tipo: 'nodriza', desde: 8, cada: 4, n: 1, mas: 12 }],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 10,  cada: 1.0 }],
         /*  2 */ [{ tipo: 'soldado', n: 12, cada: 0.9 }],
@@ -676,6 +704,9 @@ const DATOS = {
       // ESPIRAL HACIA EL CENTRO: entra por arriba a la izquierda y da dos vueltas hasta la base, al centro del mapa.
       // Entre vuelta y vuelta quedan dos celdas libres para torres. Oleadas: las de Refugio Verde con 15% más enemigos.
       camino: [[-1, 1], [11, 1], [11, 14], [1, 14], [1, 4], [8, 4], [8, 11], [4, 11], [4, 7], [6, 7]],
+      // Examen final: el Saboteador es el propio del Núcleo; los otros tres aparecen de vez en cuando
+      especiales: [{ tipo: 'saboteador', desde: 6, cada: 3, n: 1, mas: 10 }, { tipo: 'infiltrador', desde: 12, cada: 5, n: 2, mas: 15 },
+                   { tipo: 'calefactor', desde: 14, cada: 5, n: 1, mas: 15 }, { tipo: 'nodriza', desde: 16, cada: 6, n: 1, mas: 15 }],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 12,  cada: 1.0 }],
         /*  2 */ [{ tipo: 'soldado', n: 14, cada: 0.9 }],

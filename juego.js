@@ -315,6 +315,7 @@
     G.fase = 'jugando';
     G.creditos = p.creditos; G.vidas = p.vidas; G.oleada = p.oleada; G.bajas = p.bajas || 0;
     G.est = Object.assign(estNueva(), p.est || {});
+    G.vistos = {};
     G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0; G.pendientes = {};
     G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = true; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null; G.t = 0;
@@ -373,7 +374,7 @@
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
-    G.bajas = 0; G.t = 0;
+    G.bajas = 0; G.t = 0; G.vistos = {}; colaImp = []; impHasta = 0;
     G.est = estNueva();
     G.guardado.partidas++;
     guardar();
@@ -657,8 +658,17 @@
   function gruposDe(n) {
     const lista = MAPA.oleadas[n - 1];
     const final = modo !== 'infinito' && n === TOTAL_OLEADAS;
-    if (lista && (!final || lista.some(q => q.tipo === 'jefeFinal'))) return lista;
-    return generarOleada(n, final);
+    const base = lista && (!final || lista.some(q => q.tipo === 'jefeFinal')) ? lista : generarOleada(n, final);
+    return conEspeciales(base, n);
+  }
+  // Atacantes especiales del escenario: se suman a la oleada desde "desde", cada "cada" oleadas
+  function conEspeciales(grupos, n) {
+    const extra = [];
+    (MAPA.especiales || []).forEach((q, i) => {
+      if (n < q.desde || (n - q.desde) % q.cada) return;
+      extra.push({ tipo: q.tipo, n: q.n + Math.floor((n - q.desde) / (q.mas || 1e9)), cada: 3.5, desde: 4 + i * 2.5 });
+    });
+    return extra.length ? grupos.concat(extra) : grupos;
   }
   function generarOleada(n, final) {
     const gen = D.generador, tipos = MAPA.enemigosGenerados || ['soldado', 'blindado'];
@@ -741,16 +751,31 @@
     return true;
   }
 
-  function crearEnemigo(tipo, oleada) {
+  // "desde" (opcional): sale en ese punto del camino en vez de la entrada (crías de la Nodriza)
+  function crearEnemigo(tipo, oleada, desde) {
     const def = D.enemigos[tipo];
     const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
-    const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada);
+    const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada) * (desde && desde.mult || 1);
     // Con varias entradas, los enemigos se reparten por turno entre ellas
-    const ruta = RUTAS.length > 1 ? (G.rutaSig++ % RUTAS.length) : 0;
-    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, ruta, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true };
+    const ruta = desde ? desde.ruta : RUTAS.length > 1 ? (G.rutaSig++ % RUTAS.length) : 0;
+    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: desde ? desde.dist : 0, ruta, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true,
+      tEsp: Math.random() * 1.5, oculto: false, termico: 0 };
     const p = posDe(e);
     e.x = p.x; e.y = p.y;
     G.enemigos.push(e);
+    if (def.especial && !desde && !(G.vistos || (G.vistos = {}))[tipo]) {
+      G.vistos[tipo] = true;
+      aviso('¡' + def.nombre + '! ' + def.aviso, true);
+      SON.sfx('jefe', 0.6);
+    }
+    return e;
+  }
+  // Nodriza destruida: suelta sus crías repartidas un poco hacia atrás en el camino
+  function soltarCrias(e) {
+    const c = e.def.cria;
+    G.pendientes[e.oleada] = (G.pendientes[e.oleada] || 0) + c.n;
+    for (let i = 0; i < c.n; i++) crearEnemigo(c.tipo, e.oleada, { dist: Math.max(0, e.dist - i * 9), ruta: e.ruta, mult: c.vidaCria });
+    G.efectos.push({ k: 'pulso', x: e.x, y: e.y, r: 34, t: 0, dur: 0.5, color: 0xff9a3a });
   }
 
   function resolverEnemigo(e) {
@@ -783,6 +808,7 @@
       if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡' + e.def.nombre + ' destruido! +' + e.def.premio + 'cr'); }
       else G.efectos.push(e.tipo === 'blindado' || e.tipo === 'dron' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
       flotar(e.x, e.y - 10, '+' + e.def.premio);
+      if (e.def.cria) soltarCrias(e);
       resolverEnemigo(e);
     }
   }
@@ -809,7 +835,7 @@
   }
 
   // ── Combos ──
-  const trabajando = t => !!t.activa;   // la torre tiene enemigos a tiro
+  const trabajando = t => !!t.activa && !(t.apagada > 0);   // la torre tiene enemigos a tiro (y no está apagada)
   function distSegmento(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const k = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
@@ -828,7 +854,7 @@
     for (let i = 0; i < Math.round(saltos); i++) {
       let mejor = null, md = radio;
       for (const e of G.enemigos) {
-        if (!e.vivo || out.includes(e) || (e.def.aereo && !aire)) continue;
+        if (!apuntable(e) || out.includes(e) || (e.def.aereo && !aire)) continue;
         const d = Math.hypot(e.x - ult.x, e.y - ult.y);
         if (d <= md) { md = d; mejor = e; }
       }
@@ -948,7 +974,7 @@
     SON.sfx('berserk');
     const b = D.torres[t.tipo].berserk, s = t.s, r2 = s.alcance * s.alcance;
     const crio = t.tipo === 'crio';
-    const aTiro = () => G.enemigos.filter(e => e.vivo && !(e.def.aereo && (crio || !s.antiaerea)) && (e.x - t.x) * (e.x - t.x) + (e.y - t.y) * (e.y - t.y) <= r2)
+    const aTiro = () => G.enemigos.filter(e => apuntable(e) && !(e.def.aereo && (crio || !s.antiaerea)) && (e.x - t.x) * (e.x - t.x) + (e.y - t.y) * (e.y - t.y) <= r2)
       .sort((p, q) => q.dist / largoDe(q) - p.dist / largoDe(p));
     let objs = aTiro();
     if (!objs.length) return false;
@@ -994,7 +1020,7 @@
   function otrosObjetivos(t, salvo, n) {
     const s = t.s, r2 = s.alcance * s.alcance, out = [];
     for (const e of G.enemigos) {
-      if (!e.vivo || e === salvo || (e.def.aereo && !s.antiaerea)) continue;
+      if (!apuntable(e) || e === salvo || (e.def.aereo && !s.antiaerea)) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx * dx + dy * dy <= r2) out.push(e);
     }
@@ -1005,7 +1031,7 @@
     const s = t.s, r2 = s.alcance * s.alcance;
     let mejor = null, mv = -Infinity;
     for (const e of G.enemigos) {
-      if (!e.vivo || (e.def.aereo && !s.antiaerea)) continue;
+      if (!apuntable(e) || (e.def.aereo && !s.antiaerea)) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx * dx + dy * dy > r2) continue;
       let v = 1e4 - (largoDe(e) - e.dist);   // el que está más cerca de la base (sirve con varias entradas)
@@ -1015,6 +1041,44 @@
     }
     return mejor;
   }
+
+  // Atacantes especiales: camuflaje, onda de calor y pulso EMP. Las torres apagadas cuentan su tiempo aquí.
+  function habilidades(dt) {
+    for (const t of G.torres) if (t.apagada > 0) t.apagada -= dt;
+    for (const e of G.enemigos) {
+      if (!e.vivo) continue;
+      if (e.termico > 0) { e.termico -= dt; e.congelado = 0; }
+      const d = e.def;
+      if (d.camuflaje) {
+        // ciclo: visible "cada" segundos, invisible "dura" segundos (aturdido o congelado no puede camuflarse)
+        e.tEsp += dt;
+        const ciclo = d.camuflaje.cada + d.camuflaje.dura, k = e.tEsp % ciclo;
+        e.oculto = k >= d.camuflaje.cada && !(e.aturdido > 0) && !(e.congelado > 0);
+        continue;
+      }
+      if (e.congelado > 0 || e.aturdido > 0) continue;   // congelado o aturdido no usa su habilidad
+      if (d.calor) {
+        e.tEsp += dt;
+        if (e.tEsp >= d.calor.cada) {
+          e.tEsp = 0;
+          for (const o of G.enemigos) if (o.vivo && !o.def.aereo && Math.hypot(o.x - e.x, o.y - e.y) <= d.calor.radio) { o.congelado = 0; o.termico = Math.max(o.termico || 0, d.calor.inmune); }
+          G.efectos.push({ k: 'pulso', x: e.x, y: e.y, r: d.calor.radio, t: 0, dur: 0.55, color: 0xff7a1a });
+          SON.sfx('hielo', 0.5);
+        }
+      } else if (d.emp) {
+        e.tEsp += dt;
+        if (e.tEsp >= d.emp.cada) {
+          e.tEsp = 0;
+          let n = 0;
+          for (const t of G.torres) if (Math.hypot(t.x - e.x, t.y - e.y) <= d.emp.radio) { t.apagada = Math.max(t.apagada || 0, d.emp.dura); n++; }
+          G.efectos.push({ k: 'pulso', x: e.x, y: e.y, r: d.emp.radio, t: 0, dur: 0.55, color: 0x4aa8ff });
+          if (n) SON.sfx('rayo', 0.6);
+        }
+      }
+    }
+  }
+  // Se puede apuntar a un enemigo si está vivo y no está camuflado
+  const apuntable = e => e.vivo && !e.oculto;
 
   // ───────────────────────── 4. SIMULACIÓN ─────────────────────────
   // Avanza el juego dt segundos (dt pequeño; update() lo llama en pasos de 1/30 s como máximo)
@@ -1034,8 +1098,10 @@
 
     // Efectos de las torres criogénicas (se recalculan en cada paso)
     for (const e of G.enemigos) { e.lento = 0; e.fragil = 0; if (e.congelado > 0) e.congelado -= dt; if (e.aturdido > 0) e.aturdido -= dt; }
+    habilidades(dt);
     for (const t of G.torres) {
       if (t.tipo !== 'crio' && !t.s.lento) continue;   // la crío y las torres con aura de frío (cañón glacial)
+      if (t.apagada > 0) { t.activa = false; continue; }   // apagada por un pulso EMP
       const s = t.s, r2 = s.alcance * s.alcance;
       let enRango = 0;
       for (const e of G.enemigos) {
@@ -1043,6 +1109,7 @@
         const dx = e.x - t.x, dy = e.y - t.y;
         if (dx * dx + dy * dy > r2) continue;
         enRango++;
+        if (e.termico > 0) continue;   // recién calentado por un Calefactor: el frío no le hace nada
         const lento = s.lento * (e.def.resFrio == null ? 1 : e.def.resFrio);   // el jefe resiste el frío
         if (lento > e.lento) e.lento = lento;
         if (s.fragil && s.fragil > e.fragil) e.fragil = s.fragil;
@@ -1104,6 +1171,7 @@
     for (const t of G.torres) {
       const s = t.s;
       if (!s.arma) continue;
+      if (t.apagada > 0) { t.activa = false; t.haz = null; t.hacesExtra = null; continue; }   // apagada por un pulso EMP
       t.enfria -= dt;
       if (s.arma === 'mina') {
         // La minadora siembra una mina cada "cadencia" segundos, haya o no enemigos, hasta su máximo
@@ -1121,7 +1189,7 @@
         const ancho = s.ancho * (furia ? furia.multAncho : 1), dps = s.danoSeg * (furia ? furia.multDano : 1);
         const r2 = s.alcance * s.alcance, cand = [];
         for (const o of G.enemigos) {
-          if (!o.vivo || (o.def.aereo && !s.antiaerea)) continue;
+          if (!apuntable(o) || (o.def.aereo && !s.antiaerea)) continue;
           const dx = o.x - t.x, dy = o.y - t.y;
           if (dx * dx + dy * dy <= r2) cand.push(o);
         }
@@ -1252,7 +1320,7 @@
         if (p.saltos) {
           // Domo antiaéreo: al estallar descarga un rayo que salta desde el enemigo más cercano
           let primero = null, md = p.radio + 30;
-          for (const e of G.enemigos) { const dd = Math.hypot(e.x - p.x, e.y - p.y); if (e.vivo && dd < md) { md = dd; primero = e; } }
+          for (const e of G.enemigos) { const dd = Math.hypot(e.x - p.x, e.y - p.y); if (apuntable(e) && dd < md) { md = dd; primero = e; } }
           if (primero) {
             const lista = cadena(primero, p.saltos, 70, true);
             for (const e of lista) danar(e, p.dano * 0.5, p.torre);
@@ -2111,7 +2179,57 @@
     e.va += dif * 0.25;
     const a = e.va;
 
-    if (jefe) {
+    if (e.oculto) {
+      // Infiltrador camuflado: apenas una distorsión en el aire
+      const pul = 0.25 + 0.15 * Math.sin(G.t * 12 + e.dist);
+      g.lineStyle(1.2, 0xcfe8ff, pul).strokeCircle(x, y, 7.5);
+      g.lineStyle(1, 0xcfe8ff, pul * 0.7).strokeCircle(x + Math.sin(G.t * 9) * 1.5, y, 4.5);
+      return;
+    }
+    if (e.tipo === 'infiltrador') {
+      // Infiltrador: silueta delgada en cuña, morado oscuro, con visor cian y capa de camuflaje
+      g.fillStyle(COL.sombra, 0.24).fillEllipse(x + 1.5, y + 2.5, 15, 10);
+      poli(g, x, y, a, [[-7, -5.5], [2, -4], [8, 0], [2, 4], [-7, 5.5], [-5, 0]], 0x3b2d52, 1, 0x1b1426, 1.2);
+      poli(g, x, y, a, [[-6, -3.5], [-1, -2.5], [-1, 2.5], [-6, 3.5]], 0x6b4f94, 0.9);
+      poli(g, x, y, a, caja(3, -1.2, 4, 2.4), 0x5ff2ff, 1);
+      const parp = (e.tEsp % (e.def.camuflaje.cada + e.def.camuflaje.dura)) > e.def.camuflaje.cada - 0.8;   // aviso: va a desaparecer
+      if (parp) g.lineStyle(1, 0xcfe8ff, 0.6).strokeCircle(x, y, 9);
+    } else if (e.tipo === 'calefactor') {
+      // Calefactor: robot cuadrado con reactor naranjo que brilla y aletas de disipación
+      poli(g, x + 2, y + 3, a, caja(-10, -9, 20, 18), COL.sombra, 0.26);
+      poli(g, x, y, a, caja(-9, -9, 18, 18), 0x4a3a34, 1, 0x241a16, 1.2);
+      for (const k of [-6, -2, 2, 6]) poli(g, x, y, a, caja(-11.5, k - 0.7, 3, 1.4), 0x7a5a48, 1);
+      const brillo = 0.6 + 0.4 * Math.sin(G.t * 5 + e.dist * 0.1);
+      const cs = Math.cos(a), sn = Math.sin(a);
+      g.fillStyle(0xff7a1a, 0.25 * brillo).fillCircle(x, y, 12);
+      g.fillStyle(0xff7a1a, 1).fillCircle(x, y, 5.2);
+      g.fillStyle(0xffd27a, brillo).fillCircle(x - 1, y - 1, 2.4);
+      g.fillStyle(0xff3b3b, 1).fillCircle(x + cs * 7, y + sn * 7, 1.5);
+    } else if (e.tipo === 'nodriza') {
+      // Nodriza: transporte largo de seis ruedas con tres compuertas que llevan rastreadores
+      poli(g, x + 3, y + 4, a, caja(-17, -11, 34, 22), COL.sombra, 0.3);
+      for (const k of [-11, 0, 11]) { poli(g, x, y, a, caja(k - 3, -12, 6, 4), 0x1c1a19, 1); poli(g, x, y, a, caja(k - 3, 8, 6, 4), 0x1c1a19, 1); }
+      poli(g, x, y, a, [[-16, -9], [11, -9], [17, -4], [17, 4], [11, 9], [-16, 9]], 0x4b4f47, 1, 0x23251f, 1.4);
+      for (const k of [-11, -4, 3]) {
+        poli(g, x, y, a, caja(k, -6, 5.5, 12), 0x33362f, 1);
+        poli(g, x, y, a, caja(k + 1.6, -1.2, 2.2, 2.4), 0xff9a3a, 0.9);
+      }
+      poli(g, x, y, a, caja(11, -2.5, 4, 5), 0xff3b3b, 1);
+    } else if (e.tipo === 'saboteador') {
+      // Saboteador EMP: chasis con antena parabólica y arcos eléctricos azules
+      poli(g, x + 2, y + 3, a, caja(-10, -8, 20, 16), COL.sombra, 0.26);
+      poli(g, x, y, a, [[-9, -7], [6, -7], [10, 0], [6, 7], [-9, 7]], 0x2c3440, 1, 0x141a22, 1.2);
+      const cs = Math.cos(a), sn = Math.sin(a), ax = x - cs * 2, ay = y - sn * 2;
+      g.fillStyle(0x8a949e, 1).fillCircle(ax, ay, 5.5);
+      g.lineStyle(1, 0x2c3440, 1).strokeCircle(ax, ay, 5.5);
+      g.fillStyle(0x4aa8ff, 1).fillCircle(ax, ay, 2);
+      const carga = e.tEsp / e.def.emp.cada;   // se ilumina antes de cada pulso
+      g.lineStyle(1.3, 0x7cc4ff, 0.3 + 0.7 * carga);
+      for (let i = 0; i < 3; i++) {
+        const ang = G.t * 8 + i * 2.1, r1 = 7, r2 = 11;
+        g.lineBetween(ax + Math.cos(ang) * r1, ay + Math.sin(ang) * r1, ax + Math.cos(ang + 0.3) * r2, ay + Math.sin(ang + 0.3) * r2);
+      }
+    } else if (jefe) {
       // Tanque pesado: casco ancho negro con franjas rojas, borde dorado y cañón doble
       poli(g, x + 3, y + 4, a, caja(-19, -15, 38, 30), COL.sombra, 0.32);
       poli(g, x, y, a, caja(-18, -15.5, 36, 7), 0x1a1716, 1);
@@ -2201,7 +2319,8 @@
       poli(g, hx, hy, a, caja(1.2, -2.4, 2.2, 4.8), 0xff3b3b, 1);                    // visor
     }
 
-    const rr = jefe ? 24 : blind ? 14 : e.tipo === 'corredor' ? 12 : 10;
+    const grande = e.tipo === 'nodriza', medio = e.tipo === 'calefactor' || e.tipo === 'saboteador';
+    const rr = jefe ? 24 : grande ? 19 : blind || medio ? 14 : e.tipo === 'corredor' ? 12 : 10;
     if (e.congelado > 0) {
       g.fillStyle(COL.hielo, 0.6).fillCircle(x, y, rr);
       g.lineStyle(1.8, 0xffffff, 1).strokeCircle(x, y, rr);
@@ -2217,7 +2336,7 @@
       }
     }
     if (e.vida < e.vidaMax) {
-      const k = Math.max(0, e.vida / e.vidaMax), w = jefe ? 40 : blind ? 24 : 18, by = y - (jefe ? 27 : blind ? 19 : 15);
+      const k = Math.max(0, e.vida / e.vidaMax), w = jefe ? 40 : grande ? 30 : blind || medio ? 24 : 18, by = y - (jefe ? 27 : grande ? 22 : blind || medio ? 19 : 15);
       g.fillStyle(0x1b1b1b, 0.8).fillRect(x - w / 2 - 1, by - 1, w + 2, 5);
       g.fillStyle(k > 0.5 ? 0x3ddc6a : k > 0.25 ? 0xffb020 : 0xff4a3a, 1).fillRect(x - w / 2, by, w * k, 3);
     }
@@ -2271,6 +2390,16 @@
       g.fillStyle(parpadeo ? 0xff4a3a : 0x7a2a22, 1).fillCircle(m.x, m.y, 1.1);
     }
     for (const t of G.torres) dibujarTorre(g, t, 1);
+    // Torres apagadas por un pulso EMP: velo gris y chispas azules
+    for (const t of G.torres) {
+      if (!(t.apagada > 0)) continue;
+      g.fillStyle(0x0a1020, 0.45).fillRoundedRect(t.x - 15, t.y - 15, 30, 30, 5);
+      g.lineStyle(1.5, 0x4aa8ff, 0.9);
+      for (let i = 0; i < 2; i++) {
+        const a = G.t * 7 + i * Math.PI, r0 = 8, x0 = t.x + Math.cos(a) * r0, y0 = t.y + Math.sin(a) * r0;
+        g.lineBetween(x0, y0, x0 + 4, y0 - 3); g.lineBetween(x0 + 4, y0 - 3, x0 + 2, y0 + 3); g.lineBetween(x0 + 2, y0 + 3, x0 + 7, y0);
+      }
+    }
     medidoresCombo(g);
     for (const en of G.enlaces || []) if (en.trio) marcasTrio(g, en);
     if (G.torreSel) {
@@ -2341,6 +2470,9 @@
           const a = i * Math.PI / 4 + 0.3, cs = Math.cos(a), sn = Math.sin(a);
           g.lineStyle(2.2, COL.crioAzul, 1 - k).lineBetween(f.x + cs * r * 0.4, f.y + sn * r * 0.4, f.x + cs * r * 1.08, f.y + sn * r * 1.08);
         }
+      } else if (f.k === 'pulso') {
+        g.lineStyle(3, f.color, 0.85 * (1 - k)).strokeCircle(f.x, f.y, f.r * (0.2 + 0.8 * k));
+        g.fillStyle(f.color, 0.12 * (1 - k)).fillCircle(f.x, f.y, f.r * (0.2 + 0.8 * k));
       } else if (f.k === 'anillo') {
         g.lineStyle(4, 0xffffff, 0.9 * (1 - k)).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k));
         g.lineStyle(2, COL.crioAzul, 1 - k).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k) - 3);
@@ -2749,13 +2881,25 @@
   function refrescarTodo() { if (!listo) return; refrescarHud(); refrescarPanel(); }
 
   let tAviso = 0;
-  function aviso(txt) {
+  // Avisos cortos (1,8 s). Los importantes (presentación de un atacante especial) duran más, pueden ocupar
+  // dos líneas, no los tapan los avisos cortos y, si llegan varios juntos, se muestran uno tras otro.
+  let colaImp = [], impHasta = 0;
+  function aviso(txt, importante) {
     const el = $('aviso');
     if (!el) return;
+    const ahora = performance.now();
+    if (importante) {
+      if (ahora < impHasta) { colaImp.push(txt); return; }
+      impHasta = ahora + 4500;
+    } else if (ahora < impHasta) return;
     el.textContent = txt;
+    el.classList.toggle('largo', !!importante);
     el.classList.add('ver');
     clearTimeout(tAviso);
-    tAviso = setTimeout(() => el.classList.remove('ver'), 1800);
+    tAviso = setTimeout(() => {
+      el.classList.remove('ver');
+      if (importante && colaImp.length) setTimeout(() => { impHasta = 0; aviso(colaImp.shift(), true); }, 300);
+    }, importante ? 4500 : 1800);
   }
 
   // Un escenario está abierto si no exige otro, si ya se completó el que exige, o si datos.js los abre todos
@@ -3054,8 +3198,13 @@
         if (e.resist[k] < 1) notas.push('Resiste el daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
         if (e.resist[k] > 1) notas.push('Débil al daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
       }
-      if (e.resFrio != null && e.resFrio < 1) notas.push('El frío lo frena solo ' + pct(e.resFrio) + ' de lo normal.');
-      if (e.noCongela) notas.push('No se puede congelar ni aturdir.');
+      if (e.resFrio != null && e.resFrio < 1 && !e.especial) notas.push('El frío lo frena solo ' + pct(e.resFrio) + ' de lo normal.');
+      if (e.especial) {
+        notas.unshift('<b>Especial:</b> ' + e.aviso + '.');
+        const donde = Object.values(D.mapas).filter(m => (m.especiales || []).some(q => q.tipo === id)).map(m => m.nombre);
+        notas.push('Aparece en: ' + donde.join(', ') + '.');
+      }
+      if (e.noCongela) notas.push(e.especial ? 'No se puede congelar ni frenar con frío.' : 'No se puede congelar ni aturdir.');
       h += '<div class="mcard"><div class="mcab"><div><b>' + e.nombre + '</b><span>Vida ' + cr(e.vida) + ' · velocidad ' + e.vel + ' · premio ' + e.premio + 'cr · quita ' + (e.vidas || 1) + (e.vidas > 1 ? ' vidas' : ' vida') + '</span></div></div>' +
         (notas.length ? '<ul><li>' + notas.join('</li><li>') + '</li></ul>' : '<p>Sin resistencias ni debilidades.</p>') + '</div>';
     }

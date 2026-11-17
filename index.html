@@ -131,6 +131,7 @@
     padding: 5px 12px; font-size: 12px; white-space: nowrap; opacity: 0; transition: opacity .25s;
   }
   #aviso.ver { opacity: 1; }
+  #aviso.largo { white-space: normal; width: max-content; max-width: 88%; border-radius: 10px; text-align: center; line-height: 1.35; border-color: #a0522d; color: #ffd9b8; }
 
   /* Panel inferior */
   #panel { background: var(--panel); border-top: 1px solid var(--linea); padding: 8px; }
@@ -340,8 +341,8 @@
   })();
 </script>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.20.0"></script>
-<script src="juego.js?v=0.20.0"></script>
+<script src="datos.js?v=0.21.0"></script>
+<script src="juego.js?v=0.21.0"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
