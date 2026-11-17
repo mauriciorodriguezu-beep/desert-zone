@@ -106,6 +106,53 @@
     if (g.victorias > 0 && !g.completados.desierto) { g.completados.desierto = true; g.mejor.desierto = g.mejorVidas; }
     return g;
   }
+  // ── Partida en curso: se guarda sola cada vez que el campo queda limpio (al terminar una oleada) ──
+  const CLAVE_PARTIDA = 'td_partida_v1';
+  function guardarPartida() {
+    if (G.fase !== 'jugando' || G.oleada === 0) return;
+    const p = {
+      v: 1, mapa: mapaId, modo, creditos: G.creditos, vidas: G.vidas, oleada: G.oleada, bajas: G.bajas,
+      torres: G.torres.map(t => ({ tipo: t.tipo, x: t.x, y: t.y, niv: t.niv, invertido: t.invertido, prioridad: t.prioridad })),
+      minas: G.minas.map(m => ({ x: m.x, y: m.y, i: G.torres.indexOf(m.torre), dano: m.dano, radio: m.radio, aturde: m.aturde })).filter(m => m.i >= 0),
+      fecha: Date.now()
+    };
+    try { localStorage.setItem(CLAVE_PARTIDA, JSON.stringify(p)); } catch (e) { /* sin almacenamiento */ }
+  }
+  function leerPartida() {
+    try {
+      const p = JSON.parse(localStorage.getItem(CLAVE_PARTIDA) || 'null');
+      return p && p.v === 1 && D.mapas[p.mapa] ? p : null;
+    } catch (e) { return null; }
+  }
+  function borrarPartida() { try { localStorage.removeItem(CLAVE_PARTIDA); } catch (e) { /* nada */ } }
+  function continuarPartida(p) {
+    modo = p.modo === 'infinito' ? 'infinito' : 'campana';
+    cargarMapa(p.mapa);
+    fijarTotal();
+    G.fase = 'jugando';
+    G.creditos = p.creditos; G.vidas = p.vidas; G.oleada = p.oleada; G.bajas = p.bajas || 0;
+    G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0; G.pendientes = {};
+    G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
+    G.pausa = true; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null; G.t = 0;
+    G.torres = [];
+    for (const q of p.torres) {
+      if (!D.torres[q.tipo]) continue;
+      const t = { tipo: q.tipo, x: q.x, y: q.y, niv: q.niv || {}, nivel: 0, invertido: q.invertido, prioridad: q.prioridad || 'primero', enfria: 0, ang: -Math.PI / 2, tCong: 0, sin: [] };
+      calcular(t);
+      G.torres.push(t);
+    }
+    for (const m of p.minas || []) {
+      const t = G.torres[m.i];
+      if (t) G.minas.push({ x: m.x, y: m.y, torre: t, dano: m.dano, radio: m.radio, aturde: m.aturde || 0, t0: 0 });
+    }
+    recalcularSinergias();
+    G.enCuenta = true; G.cuenta = D.oleada.esperaSeg;
+    G.guardado.mapa = mapaId; G.guardado.modo = modo;
+    limpiarFlotantes();
+    refrescarTodo();
+    aviso('Partida recuperada: oleada ' + G.oleada + '. Toca ▶ para seguir');
+  }
+
   function guardar() {
     try { localStorage.setItem(CLAVE, JSON.stringify(G.guardado)); } catch (e) { /* sin almacenamiento: se juega igual */ }
   }
@@ -127,6 +174,7 @@
   };
 
   function nuevaPartida() {
+    borrarPartida();
     G.fase = 'jugando';
     G.creditos = D.inicio.creditos;
     G.vidas = D.inicio.vidas;
@@ -1017,7 +1065,7 @@
     if (G.vidas <= 0) { G.vidas = 0; terminar('derrota'); return; }
     if (!G.generando && !G.enemigos.length && G.oleada > 0) {
       if (G.oleada >= TOTAL_OLEADAS) { terminar('victoria'); return; }
-      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = D.oleada.esperaSeg; }
+      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = D.oleada.esperaSeg; guardarPartida(); }
       else {
         G.cuenta -= dt;
         if (G.cuenta <= 0) iniciarOleada(false);
@@ -1028,6 +1076,7 @@
   let esRecord = false;
   function terminar(resultado) {
     G.fase = resultado;
+    borrarPartida();
     esRecord = false;
     if (resultado === 'victoria') {
       G.guardado.victorias++;
@@ -2253,9 +2302,13 @@
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
       : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
     $('veloBoton').textContent = 'Jugar';
+    const p = leerPartida();
+    mostrar($('veloContinuar'), !!p);
+    if (p) $('veloContinuar').textContent = '▶ Continuar: ' + D.mapas[p.mapa].nombre + (p.modo === 'infinito' ? ' (infinito)' : '') + ' · oleada ' + p.oleada;
     $('velo').hidden = false;
   }
   function mostrarFinal() {
+    mostrar($('veloContinuar'), false);
     const gano = G.fase === 'victoria';
     $('veloTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
     $('veloSub').textContent = MAPA.nombre + ' · ' + (modo === 'infinito' ? 'modo infinito · llegaste a la oleada ' + G.oleada + (esRecord ? ' · ¡nuevo récord!' : ' · récord: ' + (G.guardado.recordInfinito[mapaId] || 0))
@@ -2434,6 +2487,12 @@
       nuevaPartida();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
+    $('veloContinuar').addEventListener('click', () => {
+      const p = leerPartida();
+      if (!p) { mostrar($('veloContinuar'), false); return; }
+      $('velo').hidden = true;
+      continuarPartida(p);
+    });
     $('zoomMas').addEventListener('click', () => fijarZoom(zoomMapa * 1.4));
     $('zoomMenos').addEventListener('click', () => { if (zoomMapa / 1.4 < 1.05) zoomInicial(); else fijarZoom(zoomMapa / 1.4); });
     // Velocidad: ×1 → ×2 → ×3 → ×1

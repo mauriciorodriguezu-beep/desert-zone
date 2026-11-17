@@ -203,6 +203,7 @@
   #veloDatos b { display: block; font-size: 20px; color: var(--oro); font-variant-numeric: tabular-nums; }
   #veloDatos span { font-size: 11px; color: var(--tenue); }
   #veloDatos p { font-size: 13px; color: var(--tenue); line-height: 1.5; max-width: 280px; margin: 0; }
+  #veloContinuar { min-width: 220px; height: 46px; padding: 0 18px; border-radius: 10px; border: 1px solid #2a6aaa; background: #0f2a4a; color: #9cc9f2; font-size: 15px; font-weight: 700; }
   #veloBoton {
     margin-top: 6px; height: 48px; padding: 0 36px; border-radius: 10px; font-size: 16px; font-weight: 700;
     background: #10301f; border: 1px solid #1f6a44; color: #8fe0b6;
@@ -255,14 +256,15 @@
     <div id="veloMapas"></div>
     <div id="veloModos"></div>
     <div id="veloDatos"></div>
+    <button id="veloContinuar" hidden></button>
     <button id="veloBoton">Jugar</button>
     <button id="veloManual">Manual del juego</button>
     <p id="veloCredito"></p>
   </div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.14"></script>
-<script src="juego.js?v=0.14"></script>
+<script src="datos.js?v=0.14.1"></script>
+<script src="juego.js?v=0.14.1"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
