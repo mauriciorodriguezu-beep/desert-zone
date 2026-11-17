@@ -21,11 +21,14 @@
 
   // Escenario en juego. cargarMapa() lo cambia: recalcula el camino y repinta el fondo.
   let mapaId = null, MAPA = null, TOTAL_OLEADAS = 0;
+  // Modo de juego: 'campana' (número fijo de oleadas, con jefe final) o 'infinito' (hasta perder)
+  let modo = 'campana';
+  function fijarTotal() { TOTAL_OLEADAS = modo === 'infinito' ? Infinity : (MAPA.totalOleadas || MAPA.oleadas.length); }
   let PUNTOS = [], TRAMOS = [], LARGO = 0, CAMINO = new Set();
   let AIRE = null;   // ruta recta de los enemigos aéreos, de la entrada a la base
   function cargarMapa(id) {
     if (!D.mapas[id]) id = Object.keys(D.mapas)[0];
-    mapaId = id; MAPA = D.mapas[id]; TOTAL_OLEADAS = MAPA.oleadas.length;
+    mapaId = id; MAPA = D.mapas[id]; fijarTotal();
     // Camino: puntos en px, tramos con su largo acumulado y celdas ocupadas
     PUNTOS = MAPA.camino.map(([c, r]) => ({ x: c * C + C / 2, y: r * C + C / 2 }));
     TRAMOS = []; LARGO = 0;
@@ -71,7 +74,7 @@
   // Guardado entre partidas (queda en el teléfono / navegador)
   const CLAVE = 'td_guardado_v1';
   function cargarGuardado() {
-    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0, completados: {}, mejor: {}, mapa: null };
+    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0, completados: {}, mejor: {}, mapa: null, modo: 'campana', recordInfinito: {} };
     let g = base;
     try { g = Object.assign(base, JSON.parse(localStorage.getItem(CLAVE) || '{}')); } catch (e) { /* sin guardado */ }
     // Quien ganó antes de que existieran varios escenarios tiene completado el primero
@@ -279,12 +282,67 @@
   function puedeIniciar() {
     return G.fase === 'jugando' && !G.generando && G.oleada < TOTAL_OLEADAS;
   }
-  const oleadaConJefe = n => !!MAPA.oleadas[n - 1] && MAPA.oleadas[n - 1].some(g => D.enemigos[g.tipo].jefe);
+  // Enemigos de la oleada n. Las primeras vienen escritas en datos.js; las demás se generan con una
+  // pauta fija que crece con el número de oleada (bloque "generador" de datos.js).
+  function gruposDe(n) {
+    const lista = MAPA.oleadas[n - 1];
+    const final = modo !== 'infinito' && n === TOTAL_OLEADAS;
+    if (lista && (!final || lista.some(q => q.tipo === 'jefeFinal'))) return lista;
+    return generarOleada(n, final);
+  }
+  function generarOleada(n, final) {
+    const gen = D.generador, tipos = MAPA.enemigosGenerados || ['soldado', 'blindado'];
+    const hay = t => tipos.includes(t);
+    const g = Math.max(0.4, 1 + gen.crecimiento * (n - gen.base));   // cuánto más numerosa que la oleada "base"
+    const R = x => Math.max(1, Math.round(x * g)), raiz = Math.sqrt(g);
+    const rapido = hay('corredor') ? 'corredor' : 'soldado';
+    const out = [];
+    if (n % gen.jefeCada === 0) {
+      // Oleada de jefe: escolta y uno o más jefes (en infinito se suma un jefe cada jefeExtraCada oleadas)
+      const cuantos = final ? 1 : 1 + Math.max(0, Math.floor((n - gen.base) / gen.jefeExtraCada));
+      out.push({ tipo: 'soldado', n: R(20), cada: 0.45, desde: 0 }, { tipo: 'blindado', n: R(12), cada: 1.2, desde: 3 },
+        { tipo: final ? 'jefeFinal' : 'jefe', n: cuantos, cada: 6, desde: 8 });
+      if (hay('corredor')) out.push({ tipo: 'corredor', n: R(12), cada: 0.4, desde: 11 });
+      if (hay('dron')) out.push({ tipo: 'dron', n: R(12), cada: 0.5, desde: 12 });
+      return out;
+    }
+    switch (n % 5) {
+      case 1:   // enjambre de soldados
+        out.push({ tipo: 'soldado', n: R(30), cada: Math.max(0.2, 0.34 / raiz), desde: 0 });
+        if (hay('dron')) out.push({ tipo: 'dron', n: R(10), cada: 0.6, desde: 3 });
+        break;
+      case 2:   // columna blindada con apoyo
+        out.push({ tipo: 'blindado', n: R(16), cada: Math.max(0.55, 1.1 / raiz), desde: 0 }, { tipo: rapido, n: R(14), cada: 0.45, desde: 3 });
+        break;
+      case 3:   // ataque rápido
+        out.push({ tipo: rapido, n: R(22), cada: Math.max(0.2, 0.33 / raiz), desde: 0 });
+        out.push(hay('dron') ? { tipo: 'dron', n: R(14), cada: 0.6, desde: 2 } : { tipo: 'blindado', n: R(10), cada: 1.2, desde: 2 });
+        break;
+      case 4:   // asalto pesado
+        out.push({ tipo: 'blindado', n: R(18), cada: Math.max(0.55, 1.0 / raiz), desde: 0 }, { tipo: 'soldado', n: R(22), cada: 0.4, desde: 2 });
+        if (hay('dron')) out.push({ tipo: 'dron', n: R(10), cada: 0.7, desde: 6 });
+        break;
+      default:  // de todo
+        out.push({ tipo: 'soldado', n: R(26), cada: 0.35, desde: 0 }, { tipo: 'blindado', n: R(14), cada: 1.1, desde: 2 });
+        if (hay('corredor')) out.push({ tipo: 'corredor', n: R(14), cada: 0.4, desde: 5 });
+        if (hay('dron')) out.push({ tipo: 'dron', n: R(12), cada: 0.6, desde: 6 });
+    }
+    return out;
+  }
+  // Multiplicador extra de vida: refuerzo desde cierta oleada y, en modo infinito, crecimiento acumulado
+  function multVida(n) {
+    const r = D.oleada.refuerzo, inf = D.infinito;
+    let m = 1;
+    if (r && n >= r.desde) m *= 1 + r.extra;
+    if (modo === 'infinito' && inf && n > inf.desde) m *= Math.pow(1 + inf.extraPorOleada, n - inf.desde);
+    return m;
+  }
+  const oleadaConJefe = n => gruposDe(n).some(g => D.enemigos[g.tipo].jefe);
   function iniciarOleada(conBono) {
     if (!puedeIniciar()) return false;
     if (conBono) G.creditos += bonoAdelanto();
     G.oleada++;
-    const grupos = MAPA.oleadas[G.oleada - 1];
+    const grupos = gruposDe(G.oleada);
     const cola = [];
     let fin = 0;
     for (const g of grupos) {
@@ -305,7 +363,7 @@
   function crearEnemigo(tipo, oleada) {
     const def = D.enemigos[tipo];
     const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
-    const vida = def.vida * (1 + escala * (oleada - 1));
+    const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada);
     const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true };
     const p = posDe(e);
     e.x = p.x; e.y = p.y;
@@ -572,13 +630,19 @@
     }
   }
 
+  let esRecord = false;
   function terminar(resultado) {
     G.fase = resultado;
+    esRecord = false;
     if (resultado === 'victoria') {
       G.guardado.victorias++;
       G.guardado.mejorVidas = Math.max(G.guardado.mejorVidas, G.vidas);
       G.guardado.completados[mapaId] = true;
       G.guardado.mejor[mapaId] = Math.max(G.guardado.mejor[mapaId] || 0, G.vidas);
+    }
+    if (modo === 'infinito') {
+      esRecord = G.oleada > (G.guardado.recordInfinito[mapaId] || 0);
+      if (esRecord) G.guardado.recordInfinito[mapaId] = G.oleada;
     }
     guardar();
     G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
@@ -1335,7 +1399,7 @@
 
   function refrescarHud() {
     poner($('hudCreditos'), 'textContent', cr(G.creditos));
-    poner($('hudOleada'), 'textContent', 'Oleada ' + G.oleada + ' / ' + TOTAL_OLEADAS);
+    poner($('hudOleada'), 'textContent', 'Oleada ' + G.oleada + (modo === 'infinito' ? ' · ∞' : ' / ' + TOTAL_OLEADAS));
     poner($('hudVidas'), 'textContent', String(G.vidas));
     const b = $('btnOleada');
     let txt, on = true;
@@ -1384,8 +1448,24 @@
       b.disabled = !abierto;
       const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
         : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
-      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + ' · ' + m.oleadas.length + ' oleadas</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
-      b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); });
+      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + ' · ' + (m.totalOleadas || m.oleadas.length) + ' oleadas</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
+      b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); });
+      cont.appendChild(b);
+    }
+  }
+
+  // Selector de modo: campaña (con final) o infinito (hasta perder)
+  let modoElegido = 'campana';
+  function pintarModos() {
+    const cont = $('veloModos'), m = D.mapas[mapaElegido] || MAPA, rec = G.guardado.recordInfinito[mapaElegido] || 0;
+    cont.innerHTML = '';
+    const ops = [['campana', 'Campaña', (m.totalOleadas || m.oleadas.length) + ' oleadas y jefe final'],
+                 ['infinito', 'Infinito', rec ? 'Sin final · récord: oleada ' + rec : 'Sin final · hasta que caiga la base']];
+    for (const [id, nombre, texto] of ops) {
+      const b = document.createElement('button');
+      b.className = 'mapaBtn' + (id === modoElegido ? ' sel' : '');
+      b.innerHTML = '<b>' + nombre + '</b><span>' + texto + '</span>';
+      b.addEventListener('click', () => { modoElegido = id; pintarModos(); });
       cont.appendChild(b);
     }
   }
@@ -1394,8 +1474,8 @@
     const g = G.guardado;
     $('veloTitulo').textContent = D.nombre;
     $('veloSub').textContent = 'Elige un escenario';
-    mapaElegido = mapaId;
-    pintarSelector();
+    mapaElegido = mapaId; modoElegido = modo;
+    pintarSelector(); pintarModos();
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
       : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
@@ -1405,11 +1485,12 @@
   function mostrarFinal() {
     const gano = G.fase === 'victoria';
     $('veloTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
-    $('veloSub').textContent = MAPA.nombre + ' · ' + (gano ? 'superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
+    $('veloSub').textContent = MAPA.nombre + ' · ' + (modo === 'infinito' ? 'modo infinito · llegaste a la oleada ' + G.oleada + (esRecord ? ' · ¡nuevo récord!' : ' · récord: ' + (G.guardado.recordInfinito[mapaId] || 0))
+      : gano ? 'superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
     // Tras ganar, deja elegido el escenario que se acaba de abrir, si hay uno
-    mapaElegido = mapaId;
+    mapaElegido = mapaId; modoElegido = modo;
     if (gano) for (const id in D.mapas) if (D.mapas[id].requiere === mapaId && !G.guardado.completados[id]) { mapaElegido = id; break; }
-    pintarSelector();
+    pintarSelector(); pintarModos();
     $('veloDatos').innerHTML = '<div><b>' + G.vidas + '</b><span>vidas restantes</span></div><div><b>' + G.bajas + '</b><span>enemigos eliminados</span></div><div><b>' + cr(G.guardado.bajasTotales) + '</b><span>eliminados en total</span></div>';
     $('veloBoton').textContent = mapaElegido === mapaId ? 'Jugar de nuevo' : 'Jugar';
     $('velo').hidden = false;
@@ -1423,13 +1504,12 @@
   let manualTab = 'jugar';
 
   function manualJugar() {
-    const o = D.oleada, jefes = [];
-    MAPA.oleadas.forEach((ol, i) => { if (ol.some(q => D.enemigos[q.tipo].jefe)) jefes.push(i + 1); });
+    const o = D.oleada, total = MAPA.totalOleadas || MAPA.oleadas.length, cada = D.generador.jefeCada;
     return '<h3>Objetivo</h3><p>Defiende la base. Empiezas con <b>' + D.inicio.vidas + ' vidas</b> y <b>' + D.inicio.creditos + ' créditos</b>. Cada enemigo que llega a la base te quita una vida; los jefes quitan varias. Si llegas a cero, pierdes.</p>' +
       '<h3>Construir</h3><ol><li>Toca una torre en el panel de abajo.</li><li>Toca el lugar del campo donde la quieres. Aparece en transparencia con su alcance.</li><li>Arrástrala para afinar la posición y toca <b>Construir</b>.</li></ol><p>No se puede construir sobre el camino, sobre la base ni encima de otra torre.</p>' +
       '<h3>Mejorar y vender</h3><p>Toca una torre ya construida. Cada torre tiene <b>tres atributos</b> que se mejoran por separado, con tres niveles cada uno. <b>Vender</b> devuelve el ' + pct(D.venta) + ' de todo lo que invertiste en ella.</p>' +
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
-      '<h3>Oleadas</h3><p>Cada escenario tiene <b>' + TOTAL_OLEADAS + ' oleadas</b>. En ' + MAPA.nombre + ' hay jefe en las oleadas ' + jefes.join(', ') + '. Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p>' +
+      '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
       '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
@@ -1497,7 +1577,8 @@
 
   function manualEnemigos() {
     const esc = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
-    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.</p>';
+    const rf = D.oleada.refuerzo;
+    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además ' + pct(rf.extra) + ' más de vida.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
     for (const id in D.enemigos) {
       const e = D.enemigos[id], notas = [];
       if (e.aereo) notas.push('Vuela en línea recta de la entrada a la base. Solo le disparan las torres que atacan aire y el frío no le afecta.');
@@ -1539,8 +1620,10 @@
   function conectarBotones() {
     $('veloBoton').addEventListener('click', () => {
       $('velo').hidden = true;
+      modo = modoElegido === 'infinito' ? 'infinito' : 'campana';
       if (mapaElegido && mapaElegido !== mapaId && mapaAbierto(mapaElegido)) cargarMapa(mapaElegido);
-      G.guardado.mapa = mapaId;
+      fijarTotal();
+      G.guardado.mapa = mapaId; G.guardado.modo = modo;
       nuevaPartida();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
@@ -1588,6 +1671,7 @@
   G.enlaces = [];
   document.title = D.nombre;
   $('veloCredito').textContent = 'Creado por ' + D.autor + ' · Versión ' + D.version;
+  modo = G.guardado.modo === 'infinito' ? 'infinito' : 'campana';
   cargarMapa(mapaAbierto(G.guardado.mapa) ? G.guardado.mapa : Object.keys(D.mapas)[0]);
   armarBotonesTorre();
   conectarBotones();
@@ -1604,5 +1688,5 @@
   });
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, cargarMapa, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();

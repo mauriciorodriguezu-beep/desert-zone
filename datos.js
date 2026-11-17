@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.5.2',
+  version: '0.6',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -33,8 +33,21 @@ const DATOS = {
     bonoPorOleada: 5,
     esperaSeg: 10,          // cuenta regresiva entre oleadas
     bonoAdelantoPorSeg: 3,  // cr por cada segundo adelantado (con enemigos vivos cuenta como esperaSeg completos)
-    escalaVida: 0.27        // cada oleada los enemigos tienen +27% de vida respecto de la primera
+    escalaVida: 0.27,       // cada oleada los enemigos tienen +27% de vida respecto de la primera
+    // Refuerzo: desde la oleada "desde", todos los enemigos tienen "extra" más de vida (0.05 = 5%)
+    refuerzo: { desde: 20, extra: 0.05 }
   },
+
+  /* OLEADAS GENERADAS: cada mapa trae escritas sus primeras oleadas; de ahí en adelante se generan solas
+     con una pauta que se repite cada 5 oleadas (enjambre, blindados, rápidos, asalto, de todo).
+       base           oleada de referencia: la cantidad de enemigos es la de esa oleada...
+       crecimiento    ...más este porcentaje por cada oleada posterior (0.04 = 4%)
+       jefeCada       cada cuántas oleadas aparece un jefe
+       jefeExtraCada  en modo infinito se suma un jefe más cada tantas oleadas pasada la base */
+  generador: { base: 30, crecimiento: 0.04, jefeCada: 10, jefeExtraCada: 30 },
+
+  // MODO INFINITO: pasada la oleada "desde", la vida crece además un porcentaje acumulado por oleada
+  infinito: { desde: 50, extraPorOleada: 0.03 },
 
   prioridades: {
     primero: 'Primero',     // el que va más adelante en el camino
@@ -218,12 +231,15 @@ const DATOS = {
      camino: esquinas del recorrido en [columna, fila]; -1 y 11 quedan fuera del campo (entrada y base).
      oleadas: cada oleada es una lista de grupos { tipo, n, cada (s entre enemigos), desde (s de inicio, opcional) }.
      Si no se indica "desde", el grupo parte 1 s después de terminar el anterior.
+     Aquí van escritas las oleadas 1 a 30; de la 31 en adelante se generan (bloque "generador").
      La vida de todos los enemigos, jefe incluido, crece con el número de oleada (oleada.escalaVida);
      un mapa puede traer su propio "escalaVida".
      tema: aspecto del terreno (desierto o nieve). requiere: escenario que hay que completar antes. */
   mapas: {
     desierto: {
       nombre: 'Zona desértica', dificultad: 'Fácil', tema: 'desierto',
+      totalOleadas: 50,                           // la campaña termina en esta oleada, con el jefe final
+      enemigosGenerados: ['soldado', 'blindado'],  // tipos que usan las oleadas generadas
       camino: [[-1, 1], [9, 1], [9, 6], [1, 6], [1, 11], [11, 11]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 6,  cada: 1.2 }],
@@ -255,12 +271,14 @@ const DATOS = {
         /* 27 */ [{ tipo: 'blindado', n: 18, cada: 1.0, desde: 0 }, { tipo: 'soldado', n: 16, cada: 0.5, desde: 5 }],
         /* 28 */ [{ tipo: 'soldado', n: 30, cada: 0.35, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.2, desde: 3 }],
         /* 29 */ [{ tipo: 'blindado', n: 20, cada: 0.9, desde: 0 }, { tipo: 'soldado', n: 24, cada: 0.4, desde: 2 }],
-        /* 30 JEFE FINAL */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 8 }, { tipo: 'blindado', n: 10, cada: 1.2, desde: 14 }]
+        /* 30 JEFE */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'blindado', n: 10, cada: 1.2, desde: 14 }]
       ]
     },
 
     artico: {
       nombre: 'Base ártica', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
+      totalOleadas: 50,
+      enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [4, 1], [4, 4], [8, 4], [8, 8], [2, 8], [2, 11], [11, 11]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 8,  cada: 1.0 }],
@@ -292,7 +310,7 @@ const DATOS = {
         /* 27 */ [{ tipo: 'blindado', n: 18, cada: 1.0, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.35, desde: 5 }],
         /* 28 */ [{ tipo: 'soldado', n: 32, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 16, cada: 0.5, desde: 4 }],
         /* 29 */ [{ tipo: 'blindado', n: 20, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 6 }],
-        /* 30 JEFE FINAL */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 14, cada: 0.5, desde: 12 }]
+        /* 30 JEFE */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 14, cada: 0.5, desde: 12 }]
       ]
     }
   }
