@@ -2838,6 +2838,7 @@
       fijarTotal();
       G.guardado.mapa = mapaId; G.guardado.modo = modo;
       nuevaPartida();
+      vigilarLienzo();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
     $('veloContinuar').addEventListener('click', () => {
@@ -2845,6 +2846,7 @@
       if (!p) { mostrar($('veloContinuar'), false); return; }
       $('velo').hidden = true;
       continuarPartida(p);
+      vigilarLienzo();
     });
     $('zoomMas').addEventListener('click', () => fijarZoom(zoomMapa * 1.4));
     $('zoomMenos').addEventListener('click', () => { if (zoomMapa / 1.4 < 1.05) zoomInicial(); else fijarZoom(zoomMapa / 1.4); });
@@ -2941,6 +2943,7 @@
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && G.fase === 'jugando') { G.pausa = true; refrescarTodo(); }
       SON.suspender(document.hidden);
+      if (!document.hidden) vigilarLienzo();
     });
   }
 
@@ -2983,6 +2986,34 @@
     });
   });
 
+  // Vigilante del mapa: algunos teléfonos (S25 Ultra + Chrome) a veces dejan el mapa negro.
+  // Tras "Jugar" o al volver a la app: reajusta el tamaño y revisa que el mapa se esté dibujando.
+  // Si el contexto gráfico se perdió o el centro del mapa sale negro/vacío dos veces seguidas,
+  // pasa a modo compatible (canvas) y recarga (queda la partida guardada al final de la última oleada).
+  let tVigia = null;
+  function cambiarACompatible(motivo) {
+    try { localStorage.setItem('td_render', 'canvas'); localStorage.setItem('td_render_motivo', motivo); } catch (e) { /* nada */ }
+    if (window.mostrarErrorJuego) window.mostrarErrorJuego('Mapa sin dibujar (' + motivo + '). Recargando en modo compatible…');
+    setTimeout(() => location.reload(), 1500);
+  }
+  function vigilarLienzo() {
+    clearTimeout(tVigia);
+    tVigia = setTimeout(() => {
+      try { juego.scale.refresh(); } catch (e) { /* nada */ }
+      const r = juego.renderer;
+      if (!r || r.type !== Phaser.WEBGL || document.hidden) return;
+      if (r.gl && r.gl.isContextLost()) { cambiarACompatible('contexto perdido'); return; }
+      let negros = 0;
+      const probar = n => r.snapshotPixel(Math.round(W * ESC / 2), Math.round(H * ESC / 2), c => {
+        const vacio = !c || c.a === 0 || (c.r + c.g + c.b) < 24;
+        if (!vacio) return;
+        if (++negros >= 2) cambiarACompatible('pantalla negra');
+        else if (n < 2) setTimeout(() => probar(n + 1), 700);
+      });
+      probar(1);
+    }, 600);
+  }
+
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, W, H, renderer: () => juego.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl', fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, W, H, renderer: () => juego.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl', fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, vigilarLienzo, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();
