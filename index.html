@@ -240,11 +240,16 @@
   </div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js"></script>
-<script src="juego.js"></script>
+<script src="datos.js?v=0.5.2"></script>
+<script src="juego.js?v=0.5.2"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
+    // Si llega una versión nueva mientras el juego está abierto, se recarga solo una vez
+    var teniaControl = !!navigator.serviceWorker.controller, recargado = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (teniaControl && !recargado) { recargado = true; location.reload(); }
+    });
     navigator.serviceWorker.register('sw.js').catch(function () {});
   }
 </script>
