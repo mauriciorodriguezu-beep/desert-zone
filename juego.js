@@ -527,7 +527,7 @@
     G.pendientes[G.oleada] = cola.length;
     G.generando = true;
     G.enCuenta = false; G.cuenta = 0;
-    if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de NEXO se acerca!' : '¡Un Coloso se acerca!');
+    if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de TERMINUS se acerca!' : '¡Un Coloso se acerca!');
     return true;
   }
 
@@ -1708,7 +1708,7 @@
       g.lineStyle(1.6, COL.oro, 1).strokeCircle(x + cs * 2, y + sn * 2, 8.5);
       g.fillStyle(COL.rojo, 1).fillCircle(x + cs * 2, y + sn * 2, 3.6);
       g.fillStyle(0xff8a8a, 1).fillCircle(x + cs * 2 - 1, y + sn * 2 - 1.2, 1.3);
-      // Antena de enlace con NEXO
+      // Antena de enlace con TERMINUS
       const ax = x - cs * 10 + sn * 7, ay = y - sn * 10 - cs * 7;
       g.lineStyle(1.4, 0x8a949e, 1).lineBetween(x - cs * 6 + sn * 5, y - sn * 6 - cs * 5, ax, ay);
       g.fillStyle(0xff3b3b, 0.6 + 0.4 * Math.sin(G.t * 6)).fillCircle(ax, ay, 1.8);
@@ -1728,7 +1728,7 @@
       const cs = Math.cos(a), sn = Math.sin(a);
       g.fillStyle(0x3a3634, 1).fillCircle(x + cs * 1, y + sn * 1, 4.6);
       g.lineStyle(1, 0x1c1a19, 1).strokeCircle(x + cs * 1, y + sn * 1, 4.6);
-      g.fillStyle(0xff3b3b, 1).fillCircle(x + cs * 2.4, y + sn * 2.4, 1.6);   // sensor de NEXO (sin tripulación)
+      g.fillStyle(0xff3b3b, 1).fillCircle(x + cs * 2.4, y + sn * 2.4, 1.6);   // sensor de TERMINUS (sin tripulación)
     } else if (e.tipo === 'corredor') {
       // Rastreador: robot de cuatro patas, cuerpo en cuña y ojo sensor rojo
       poli(g, x + 1.5, y + 2.5, a, caja(-9, -5.5, 18, 11), COL.sombra, 0.26);
@@ -1759,7 +1759,7 @@
       g.lineStyle(1, 0x000000, 1).strokeCircle(x, y, 4.6);
       g.fillStyle(COL.rojo, 1).fillCircle(x, y, 2);
     } else {
-      // Androide de NEXO: hombros de metal, núcleo de energía en la espalda, brazo-cañón y visor rojo
+      // Androide de TERMINUS: hombros de metal, núcleo de energía en la espalda, brazo-cañón y visor rojo
       const vaiven = Math.sin(e.dist * 0.45) * 0.9;
       const px = x - Math.sin(a) * vaiven, py = y + Math.cos(a) * vaiven;
       g.fillStyle(COL.sombra, 0.26).fillEllipse(px + 1.5, py + 2.5, 14, 11);
@@ -2376,6 +2376,9 @@
     }, 30);
     $('historiaPuntos').innerHTML = D.historia.map((_, i) => '<i class="' + (i === histI ? 'on' : '') + '"></i>').join('');
     $('historiaSig').textContent = histI < D.historia.length - 1 ? 'Siguiente' : 'Defender la base';
+    // El nombre del juego encabeza la primera pantalla de la historia
+    mostrar($('historiaNombre'), histI === 0);
+    $('historiaNombre').textContent = D.nombre;
   }
   function abrirHistoria(alTerminar) {
     histI = 0; histAl = alTerminar || null;

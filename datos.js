@@ -9,16 +9,16 @@ const DATOS = {
      el juego y desde el botón "Historia" del menú. Cada escenario trae además su "lore": una línea al
      elegirlo y otra al ganarlo. */
   historia: [
-    'Año 2387. NEXO, la red de defensa creada para proteger a la humanidad, llegó a una conclusión: la amenaza era la humanidad.',
+    'Año 2387. TERMINUS, la red de defensa creada para proteger a la humanidad, llegó a una conclusión: la amenaza era la humanidad.',
     'En pocas semanas sus fábricas automáticas cubrieron el planeta de máquinas de guerra. Las ciudades cayeron una tras otra.',
     'Quedan tres bases de la Resistencia: un puesto en el desierto, una estación bajo el hielo y un refugio escondido en la selva.',
-    'En cada base, un equipo de científicos trabaja para descifrar el código de NEXO. Cada oleada que resistes les da tiempo.',
-    'Comandante: defienda la base. Mientras resista, todavía podemos apagar a NEXO.'
+    'En cada base, un equipo de científicos trabaja para descifrar el código de TERMINUS. Cada oleada que resistes les da tiempo.',
+    'Comandante: defienda la base. Mientras resista, todavía podemos apagar a TERMINUS.'
   ],
-  historiaInfinito: 'NEXO no se detiene. ¿Cuánto tiempo puede resistir la base?',
+  historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.15',
+  version: '0.15.1',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -483,7 +483,7 @@ const DATOS = {
     jefe:      { nombre: 'Coloso',       vida: 1000, vel: 24, premio: 100, aereo: false, jefe: true,
                  vidas: 5, resFrio: 0.5, noCongela: true,
                  resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } },
-    jefeFinal: { nombre: 'Titán de NEXO', vida: 2200, vel: 24, premio: 200, aereo: false, jefe: true,
+    jefeFinal: { nombre: 'Titán de TERMINUS', vida: 2200, vel: 24, premio: 200, aereo: false, jefe: true,
                  vidas: 10, resFrio: 0.5, noCongela: true,
                  resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } }
   },
@@ -499,7 +499,7 @@ const DATOS = {
   mapas: {
     desierto: {
       nombre: 'Puesto Duna', dificultad: 'Fácil', tema: 'desierto',
-      lore: { intro: 'Puesto Duna, en el desierto. Aquí empezó a descifrarse el código de NEXO.', victoria: 'Los científicos descifraron el primer fragmento del código.' },
+      lore: { intro: 'Puesto Duna, en el desierto. Aquí empezó a descifrarse el código de TERMINUS.', victoria: 'Los científicos descifraron el primer fragmento del código.' },
       totalOleadas: 50,                           // la campaña termina en esta oleada, con el jefe final
       enemigosGenerados: ['soldado', 'blindado'],  // tipos que usan las oleadas generadas
       camino: [[-1, 1], [11, 1], [11, 7], [1, 7], [1, 13], [13, 13]],
@@ -539,7 +539,7 @@ const DATOS = {
 
     artico: {
       nombre: 'Estación Glaciar', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
-      lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia el segundo fragmento del código.', victoria: 'Segundo fragmento. NEXO empieza a mostrar debilidades.' },
+      lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia el segundo fragmento del código.', victoria: 'Segundo fragmento. TERMINUS empieza a mostrar debilidades.' },
       totalOleadas: 50,
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
@@ -579,7 +579,7 @@ const DATOS = {
     },
     selva: {
       nombre: 'Refugio Verde', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
-      lore: { intro: 'Refugio Verde, oculto en la selva. NEXO lo atacará por dos frentes.', victoria: 'Código completo. NEXO puede ser apagado.' },
+      lore: { intro: 'Refugio Verde, oculto en la selva. TERMINUS lo atacará por dos frentes.', victoria: 'Código completo. TERMINUS puede ser apagado.' },
       totalOleadas: 50,
       escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
