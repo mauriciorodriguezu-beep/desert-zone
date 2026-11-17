@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.6.2',
+  version: '0.7',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -69,6 +69,9 @@ const DATOS = {
       desc: 'Daño rápido, alcance corto. Dispara a tierra y aire.',
       arma: 'bala', tipoDano: 'fisico', antiaerea: true,
       dano: 8, cadencia: 0.35, alcance: 90,
+      // BERSERK: con las 9 mejoras compradas, cada "cargaSeg" segundos (con enemigos a tiro) lanza este ataque.
+      // Ráfaga de "balas" disparos repartidos entre los enemigos a tiro, cada uno con el daño multiplicado.
+      berserk: { nombre: 'Tormenta de plomo', cargaSeg: 12, balas: 10, multDano: 2 },
       atributos: {
         dano: { nombre: 'Daño', niveles: [
           { costo: 40,  dano: 11 },
@@ -91,6 +94,8 @@ const DATOS = {
       nombre: 'Torre criogénica', corto: 'Crío', costo: 120,
       desc: 'No hace daño. Ralentiza a todo enemigo terrestre dentro de su alcance.',
       alcance: 80, lento: 0.5,
+      // BERSERK: daña y congela a todos los enemigos de tierra dentro de su alcance.
+      berserk: { nombre: 'Cero absoluto', cargaSeg: 16, dano: 150, congela: 3 },
       atributos: {
         frio: { nombre: 'Frío', niveles: [                               // cuánto frena
           { costo: 50,  lento: 0.6 },
@@ -114,6 +119,8 @@ const DATOS = {
       desc: 'Daño alto y lento. Fuerte contra blindados. Solo ataca en tierra.',
       arma: 'plasma', tipoDano: 'energia', antiaerea: false, velProyectil: 260,
       dano: 60, cadencia: 1.8, alcance: 115, onda: 0,
+      // BERSERK: un disparo con el daño multiplicado y una onda expansiva grande.
+      berserk: { nombre: 'Supernova', cargaSeg: 14, multDano: 4, onda: 70 },
       atributos: {
         dano: { nombre: 'Daño', niveles: [
           { costo: 70,  dano: 80 },
@@ -137,6 +144,8 @@ const DATOS = {
       desc: 'Explosión en área y largo alcance. Ataca tierra y aire.',
       arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 170,
       dano: 45, cadencia: 2.0, alcance: 150, radio: 35, salva: 1,
+      // BERSERK: lanza "misiles" misiles a la vez, repartidos entre los enemigos a tiro.
+      berserk: { nombre: 'Andanada', cargaSeg: 16, misiles: 6, multDano: 1.5 },
       atributos: {
         dano: { nombre: 'Daño', niveles: [
           { costo: 80,  dano: 58 },

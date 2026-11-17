@@ -147,6 +147,9 @@
     t.s = statsTorre(t.tipo, t.niv, t.sin);
     t.nivel = 0;
     for (const id in t.niv) t.nivel += t.niv[id];   // total de mejoras compradas (sube el daño de los combos)
+    // Modo berserk: todas las mejoras compradas
+    t.berserk = !!D.torres[t.tipo].berserk && t.nivel >= maxMejoras(t.tipo);
+    if (t.bCarga == null) t.bCarga = 0;
   }
 
   // ── Colocación libre: las torres van en cualquier punto del campo ──
@@ -250,7 +253,9 @@
     G.creditos -= m.costo;
     t.invertido += m.costo;
     t.niv[id] = (t.niv[id] || 0) + 1;
+    const antes = t.berserk;
     calcular(t);
+    if (t.berserk && !antes) { t.bCarga = 0; t.tBerserk = G.t; aviso('¡Modo berserk! ' + D.torres[t.tipo].nombre + ': ' + D.torres[t.tipo].berserk.nombre); }
     return true;
   }
   function maxMejoras(tipo) {
@@ -480,6 +485,42 @@
     return true;
   }
 
+  // Ataque berserk de una torre con todas sus mejoras. Devuelve false si no tiene a quién disparar.
+  function lanzarBerserk(t) {
+    const b = D.torres[t.tipo].berserk, s = t.s, r2 = s.alcance * s.alcance;
+    const crio = t.tipo === 'crio';
+    const aTiro = () => G.enemigos.filter(e => e.vivo && !(e.def.aereo && (crio || !s.antiaerea)) && (e.x - t.x) * (e.x - t.x) + (e.y - t.y) * (e.y - t.y) <= r2)
+      .sort((p, q) => q.dist / largoDe(q) - p.dist / largoDe(p));
+    let objs = aTiro();
+    if (!objs.length) return false;
+    if (crio) {
+      for (const e of objs) {
+        if (!e.def.noCongela) e.congelado = Math.max(e.congelado, b.congela);
+        aplicarDano(e, b.dano * (1 + e.fragil));
+      }
+      G.efectos.push({ k: 'hielo', x: t.x, y: t.y, r: s.alcance, t: 0, dur: 0.7 });
+    } else if (s.arma === 'bala') {
+      for (let i = 0; i < b.balas; i++) {
+        objs = objs.filter(e => e.vivo);
+        if (!objs.length) break;
+        const e = objs[i % objs.length];
+        G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.16, h: false });
+        danar(e, s.dano * b.multDano, t);
+      }
+    } else if (s.arma === 'plasma') {
+      const e = elegirObjetivo(t) || objs[0];
+      G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * b.multDano, onda: b.onda, critico: true, torre: t, espera: 0 });
+    } else {
+      for (let i = 0; i < b.misiles; i++) {
+        const e = objs[i % objs.length];
+        G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil * 1.3, dano: s.dano * b.multDano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.1, lado: i % 2 ? 1 : -1 });
+      }
+    }
+    if (!crio) { t.ang = Math.atan2(objs.length ? objs[0].y - t.y : 0, objs.length ? objs[0].x - t.x : 1); t.tFuego = G.t; }
+    cartel(t.x, t.y - 24, b.nombre, '#ffe1d6', '#6b1408');
+    return true;
+  }
+
   function elegirObjetivo(t) {
     const s = t.s, r2 = s.alcance * s.alcance;
     let mejor = null, mv = -Infinity;
@@ -617,6 +658,16 @@
       if (en.carga >= 1) {
         if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; }
         else en.carga = 1;
+      }
+    }
+
+    // Berserk: las torres con todas sus mejoras cargan un ataque propio mientras tienen enemigos a tiro
+    for (const t of G.torres) {
+      if (!t.berserk) continue;
+      if (trabajando(t)) t.bCarga += dt / D.torres[t.tipo].berserk.cargaSeg;
+      if (t.bCarga >= 1) {
+        if (lanzarBerserk(t)) { t.bCarga = 0; t.tBerserk = G.t; }
+        else t.bCarga = 1;
       }
     }
 
@@ -968,6 +1019,19 @@
       const px = x - (n - 1) * 1.5 + i * 3;
       g.fillStyle(0x3a2a10, alfa).fillRect(px - 1.5, y + 10, 3, 3.6);
       g.fillStyle(COL.oro, alfa).fillRect(px - 0.9, y + 10.6, 1.8, 2.4);
+    }
+    // Berserk: marco rojo que late, medidor de carga alrededor y destello al disparar
+    if (t.berserk) {
+      const k = (Math.sin(G.t * 5) + 1) / 2, c = Math.min(1, t.bCarga || 0), hace = G.t - (t.tBerserk == null ? -9 : t.tBerserk);
+      g.lineStyle(1.6, 0xff4a2a, (0.45 + 0.45 * k) * alfa).strokeRoundedRect(x - 16.5, y - 16.5, 33, 33, 6);
+      if (c > 0) {
+        g.lineStyle(2.4, c >= 1 ? 0xffffff : 0xff7a3a, alfa);
+        g.beginPath(); g.arc(x, y, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c); g.strokePath();
+      }
+      if (hace >= 0 && hace < 0.45) {
+        const q = hace / 0.45;
+        g.lineStyle(3, 0xff6a3a, 1 - q).strokeCircle(x, y, 18 + 22 * q);
+      }
     }
   }
 
@@ -1355,7 +1419,7 @@
 
     if (G.torreSel) {
       const t = G.torreSel, def = D.torres[t.tipo];
-      poner(tit, 'textContent', def.nombre + ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo));
+      poner(tit, 'textContent', def.nombre + (t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
       refrescarAtributos(t);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
@@ -1370,6 +1434,7 @@
       } else {
         tSin = 'Sin combo: pégale cualquier otra torre para activar uno';
       }
+      if (def.berserk) tSin = (t.berserk ? 'Berserk: ' + def.berserk.nombre + ' ' + Math.floor(Math.min(1, t.bCarga) * 100) + '%' : 'Berserk: faltan ' + (maxMejoras(t.tipo) - t.nivel) + ' mejoras') + ' · ' + tSin;
       vV = true; vP = !!t.s.arma;
       poner(bP, 'textContent', 'Objetivo: ' + D.prioridades[t.prioridad]);
       poner(bV, 'textContent', 'Vender +' + valorVenta(t) + 'cr');
@@ -1514,11 +1579,22 @@
     return '<h3>Objetivo</h3><p>Defiende la base. Empiezas con <b>' + D.inicio.vidas + ' vidas</b> y <b>' + D.inicio.creditos + ' créditos</b>. Cada enemigo que llega a la base te quita una vida; los jefes quitan varias. Si llegas a cero, pierdes.</p>' +
       '<h3>Construir</h3><ol><li>Toca una torre en el panel de abajo.</li><li>Toca el lugar del campo donde la quieres. Aparece en transparencia con su alcance.</li><li>Arrástrala para afinar la posición y toca <b>Construir</b>.</li></ol><p>No se puede construir sobre el camino, sobre la base ni encima de otra torre.</p>' +
       '<h3>Mejorar y vender</h3><p>Toca una torre ya construida. Cada torre tiene <b>tres atributos</b> que se mejoran por separado, con tres niveles cada uno. <b>Vender</b> devuelve el ' + pct(D.venta) + ' de todo lo que invertiste en ella.</p>' +
+      '<h3>Modo berserk</h3><p>Cuando una torre tiene sus <b>tres atributos al máximo</b> entra en modo berserk: aparece un marco rojo y, mientras tenga enemigos a tiro, carga un ataque de mayor potencia que se dispara solo cada cierto tiempo. El ataque de cada torre está en la pestaña <b>Torres</b>.</p>' +
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
       '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
       '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
+  }
+
+  function textoBerserk(tipo) {
+    const def = D.torres[tipo], b = def.berserk;
+    if (!b) return '';
+    const que = tipo === 'crio' ? 'hace ' + b.dano + ' de daño y congela ' + dec(b.congela) + ' s a todos los enemigos de tierra dentro de su alcance'
+      : def.arma === 'bala' ? 'ráfaga de ' + b.balas + ' disparos repartidos entre los enemigos a tiro, cada uno con daño ×' + dec(b.multDano)
+      : def.arma === 'plasma' ? 'un disparo con daño ×' + dec(b.multDano) + ' y onda expansiva de ' + b.onda + ' px'
+      : b.misiles + ' misiles a la vez repartidos entre los enemigos a tiro, con daño ×' + dec(b.multDano);
+    return '<b>' + b.nombre + ':</b> ' + que + '. Cada ' + b.cargaSeg + ' s.';
   }
 
   function manualTorres() {
@@ -1538,7 +1614,7 @@
         });
         h += '</tr>';
       }
-      h += '</table></div>';
+      h += '</table>' + (def.berserk ? '<p class="mdato">Berserk (con las ' + maxMejoras(tipo) + ' mejoras) — ' + textoBerserk(tipo) + '</p>' : '') + '</div>';
     }
     return h;
   }
