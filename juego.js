@@ -2682,7 +2682,7 @@
   armarBotonesTorre();
   conectarBotones();
   mostrarMenu();
-  if (!G.guardado.historiaVista) abrirHistoria();   // la primera vez, la historia antes del menú
+  abrirHistoria();   // cada vez que se abre el juego, la historia antes del menú (se puede saltar)
   new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'mapa',
