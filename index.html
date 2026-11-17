@@ -69,8 +69,8 @@
   #manualCab { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; }
   #manualCab b { font-size: 18px; }
   #manualCerrar { width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--linea); background: var(--caja); font-size: 18px; color: var(--texto); }
-  #manualTabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 0 12px 10px; border-bottom: 1px solid var(--linea); }
-  #manualTabs button { height: 38px; border-radius: 8px; border: 1px solid var(--linea); background: var(--caja); font-size: 13px; font-weight: 600; color: var(--tenue); }
+  #manualTabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; padding: 0 12px 10px; border-bottom: 1px solid var(--linea); }
+  #manualTabs button { height: 38px; border-radius: 8px; border: 1px solid var(--linea); background: var(--caja); font-size: 12px; padding: 0 2px; white-space: nowrap; font-weight: 600; color: var(--tenue); }
   #manualTabs button.sel { border-color: var(--azul); background: #0f1e35; color: var(--texto); }
   #manualCuerpo { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 4px 14px 28px; font-size: 14px; line-height: 1.5; color: #c6d2e3; }
   #manualCuerpo h3 { font-size: 15px; color: var(--texto); margin: 18px 0 4px; }
@@ -230,7 +230,7 @@
   </section>
   <div id="manual" hidden>
     <div id="manualCab"><b>Manual del juego</b><button id="manualCerrar" aria-label="Cerrar manual">✕</button></div>
-    <div id="manualTabs"><button data-tab="jugar">Jugar</button><button data-tab="torres">Torres</button><button data-tab="combos">Combos</button><button data-tab="enemigos">Enemigos</button></div>
+    <div id="manualTabs"><button data-tab="jugar">Jugar</button><button data-tab="torres">Torres</button><button data-tab="combos">Combos</button><button data-tab="trios">Tríos</button><button data-tab="enemigos">Enemigos</button></div>
     <div id="manualCuerpo"></div>
   </div>
   <div id="velo">
@@ -245,8 +245,8 @@
   </div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.9.1"></script>
-<script src="juego.js?v=0.9.1"></script>
+<script src="datos.js?v=0.10"></script>
+<script src="juego.js?v=0.10"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {

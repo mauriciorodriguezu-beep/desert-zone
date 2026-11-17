@@ -216,12 +216,32 @@
             if (t.tipo === sg.para && !t.sin.includes(sg.id)) t.sin.push(sg.id);
           }
           const clave = a.x + ',' + a.y + '|' + b.x + ',' + b.y + '|' + sg.id;
-          G.enlaces.push({ a, b, sg, clave, carga: previas[clave] || 0, tDisparo: -9 });
+          G.enlaces.push({ a, b, torres: [a, b], sg, clave, carga: previas[clave] || 0, tDisparo: -9 });
           a.nEnl++; b.nEnl++;
         }
       }
     }
+    // Tríos: tres torres pegadas entre sí (en triángulo) cuyos tipos coinciden con un combo de 3
+    const n = G.torres.length;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = G.torres[i], b = G.torres[j];
+      if (!contiguas(a, b)) continue;
+      for (let k = j + 1; k < n; k++) {
+        const c = G.torres[k];
+        if (!contiguas(a, c) || !contiguas(b, c)) continue;
+        for (const sg of trioDe(a.tipo, b.tipo, c.tipo)) {
+          const clave = [a, b, c].map(t => t.x + ',' + t.y).join('|') + '|' + sg.id;
+          G.enlaces.push({ a, b, torres: [a, b, c], trio: true, sg, clave, carga: previas[clave] || 0, tDisparo: -9 });
+        }
+      }
+    }
     for (const t of G.torres) calcular(t);   // los bonos dependen de las vecinas
+  }
+  // Combos de 3 cuyo trío de tipos es este (sin importar el orden)
+  const firma = tipos => tipos.slice().sort().join('+');
+  function trioDe(ta, tb, tc) {
+    const f = firma([ta, tb, tc]);
+    return (D.trios || []).filter(sg => firma(sg.entre) === f);
   }
 
   // Qué combos se activarían si se construye "tipo" en el punto (x, y)
@@ -230,6 +250,10 @@
     for (const t of G.torres) {
       if (!contiguas({ x, y }, t)) continue;
       for (const sg of sinergiaDe(tipo, t.tipo)) nombres.add(sg.nombre + ' (' + sg.combo.texto + ')');
+      for (const u of G.torres) {
+        if (u === t || !contiguas({ x, y }, u) || !contiguas(t, u)) continue;
+        for (const sg of trioDe(tipo, t.tipo, u.tipo)) nombres.add('TRÍO ' + sg.nombre + ' (' + sg.combo.texto + ')');
+      }
     }
     return [...nombres];
   }
@@ -247,7 +271,7 @@
     calcular(t);
     G.torres.push(t);
     recalcularSinergias();
-    const nuevos = G.enlaces.filter(en => en.a === t || en.b === t);
+    const nuevos = G.enlaces.filter(en => en.torres.includes(t));
     if (nuevos.length) aviso('Combo activo: ' + [...new Set(nuevos.map(en => en.sg.nombre))].join(' + '));
     return t;
   }
@@ -511,8 +535,9 @@
   }
 
   function lanzarCombo(en) {
-    const { a, b, sg } = en, c = sg.combo;
-    const fuerza = c.dano + c.danoPorMejora * (a.nivel + b.nivel);
+    const { a, b, sg } = en, c = sg.combo, ts = en.torres;
+    const fuerza = c.dano + c.danoPorMejora * ts.reduce((s, t) => s + t.nivel, 0);
+    const deTipo = tipo => ts.find(t => t.tipo === tipo);
     const efecto = CARTEL[c.efecto] ? c.efecto : 'fuego', color = COLOR_COMBO[efecto];
     const golpear = e => {
       if (c.congela && !e.def.aereo && !e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela);
@@ -521,7 +546,7 @@
     };
     if (c.tipo === 'area') {
       // La torre "desde" dispara una carga que estalla sobre su objetivo y golpea todo lo que esté en el radio
-      const tD = a.tipo === c.desde ? a : b;
+      const tD = deTipo(c.desde);
       const obj = elegirObjetivo(tD);
       if (!obj) return false;
       const ox = obj.x, oy = obj.y;
@@ -531,11 +556,12 @@
       G.efectos.push(efecto === 'hielo' ? { k: 'hielo', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5 } : { k: 'estallido', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5, color });
       cartel(ox, oy - Math.min(40, c.radio * 0.6), sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     } else if (c.tipo === 'linea') {
-      // Las dos torres disparan un rayo que atraviesa a todos los enemigos en su línea
-      const obj = elegirObjetivo(a) || elegirObjetivo(b);
+      // Las torres del combo disparan un rayo que atraviesa a todos los enemigos en su línea
+      let obj = null;
+      for (const t of ts) if (!obj) obj = elegirObjetivo(t);
       if (!obj) return false;
       const ox = obj.x, oy = obj.y, tocados = new Set();
-      for (const t of [a, b]) {
+      for (const t of ts) {
         const ang = Math.atan2(oy - t.y, ox - t.x);
         const x2 = t.x + Math.cos(ang) * c.largo, y2 = t.y + Math.sin(ang) * c.largo;
         t.ang = ang; t.tFuego = G.t;
@@ -546,7 +572,7 @@
       cartel(ox, oy - 22, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     } else if (c.tipo === 'cadena') {
       // La torre de rayos lanza una descarga que salta entre enemigos cercanos
-      const tD = a.tipo === c.desde ? a : b;
+      const tD = deTipo(c.desde);
       const obj = elegirObjetivo(tD);
       if (!obj) return false;
       const lista = cadena(obj, c.saltos, c.radioSalto || 70, true);
@@ -556,13 +582,13 @@
       cartel(obj.x, obj.y - 22, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     } else if (c.tipo === 'minas') {
       // La minadora siembra minas extra con el daño del combo
-      const tD = a.tipo === c.desde ? a : b;
+      const tD = deTipo(c.desde);
       if (!sembrar(tD, c.minas, fuerza, true)) return false;
       tD.tFuego = G.t;
       cartel(tD.x, tD.y - 24, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     } else {
-      // Onda desde el punto medio de las dos torres (solo enemigos en tierra)
-      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      // Onda desde el centro de las torres del combo (solo enemigos en tierra)
+      const mx = ts.reduce((s, t) => s + t.x, 0) / ts.length, my = ts.reduce((s, t) => s + t.y, 0) / ts.length;
       const dentro = G.enemigos.filter(e => e.vivo && !e.def.aereo && Math.hypot(e.x - mx, e.y - my) <= c.radio);
       if (!dentro.length) return false;
       for (const e of dentro) golpear(e);
@@ -816,8 +842,9 @@
     // Combos: cada enlace carga mientras alguna de sus dos torres está trabajando.
     // Una torre con varias vecinas reparte su carga: cada enlace carga más lento.
     for (const en of G.enlaces) {
-      if (!(trabajando(en.a) || trabajando(en.b))) continue;
-      en.carga += dt / (en.sg.combo.cargaSeg * Math.max(en.a.nEnl, en.b.nEnl));
+      if (!en.torres.some(trabajando)) continue;
+      // Los tríos no reparten carga; los combos de 2 sí (una torre con varias vecinas carga cada uno más lento)
+      en.carga += dt / (en.sg.combo.cargaSeg * (en.trio ? 1 : Math.max(en.a.nEnl, en.b.nEnl)));
       if (en.carga >= 1) {
         if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; }
         else en.carga = 1;
@@ -1111,6 +1138,7 @@
 
   // Medidor de carga del combo: círculo entre las dos torres que se va llenando
   function medidorCombo(g, en) {
+    if (en.trio) return medidorTrio(g, en);
     const mx = (en.a.x + en.b.x) / 2, my = (en.a.y + en.b.y) / 2, k = Math.min(1, en.carga);
     const hace = G.t - en.tDisparo;
     g.fillStyle(0x2a1c08, 0.9).fillCircle(mx, my, 7);
@@ -1123,6 +1151,25 @@
       const q = hace / 0.4;
       g.lineStyle(3, 0xffffff, 1 - q).strokeCircle(mx, my, 7 + 16 * q);
       g.lineStyle(6, 0xffffff, 0.8 * (1 - q)).lineBetween(en.a.x, en.a.y, en.b.x, en.b.y);
+    }
+  }
+
+  // Medidor del trío: triángulo al centro de las tres torres, con su anillo de carga en magenta
+  function medidorTrio(g, en) {
+    const ts = en.torres, mx = (ts[0].x + ts[1].x + ts[2].x) / 3, my = (ts[0].y + ts[1].y + ts[2].y) / 3;
+    const k = Math.min(1, en.carga), hace = G.t - en.tDisparo;
+    g.fillStyle(0x2a0f24, 0.92).fillCircle(mx, my, 9);
+    g.lineStyle(1, 0x000000, 0.5).strokeCircle(mx, my, 9);
+    g.fillStyle(k >= 1 ? 0xffffff : 0xff7ad9, 0.95).fillTriangle(mx, my - 4.2, mx - 3.8, my + 2.6, mx + 3.8, my + 2.6);
+    if (k > 0) {
+      g.lineStyle(3.2, k >= 1 ? 0xffffff : 0xff7ad9, 1);
+      g.beginPath(); g.arc(mx, my, 6.6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); g.strokePath();
+    }
+    if (hace < 0.5) {
+      const q = hace / 0.5;
+      g.lineStyle(3, 0xff7ad9, 1 - q).strokeCircle(mx, my, 9 + 24 * q);
+      g.lineStyle(5, 0xffffff, 0.7 * (1 - q));
+      for (const t of ts) g.lineBetween(mx, my, t.x, t.y);
     }
   }
 
@@ -1420,7 +1467,7 @@
     }
 
     if (G.torreSel) marcarAlcance(g, G.torreSel.x, G.torreSel.y, G.torreSel.s.alcance, G.torreSel.tipo);
-    for (const en of G.enlaces || []) enlace(g, en.a.x, en.a.y, en.b.x, en.b.y, 0.85);
+    for (const en of G.enlaces || []) if (!en.trio) enlace(g, en.a.x, en.a.y, en.b.x, en.b.y, 0.85);
     // Minas sembradas en el camino
     for (const m of G.minas || []) {
       g.fillStyle(0x000000, 0.25).fillCircle(m.x + 1, m.y + 1.5, 4.6);
@@ -1710,8 +1757,9 @@
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
       for (const en of G.enlaces) {
-        if (en.a !== t && en.b !== t) continue;
-        const m0 = mios[en.sg.nombre] || (mios[en.sg.nombre] = { n: 0, carga: 0 });
+        if (!en.torres.includes(t)) continue;
+        const nom = (en.trio ? 'Trío ' : '') + en.sg.nombre;
+        const m0 = mios[nom] || (mios[nom] = { n: 0, carga: 0 });
         m0.n++; m0.carga = Math.max(m0.carga, Math.min(1, en.carga));
       }
       const nombres = Object.keys(mios);
@@ -1920,14 +1968,14 @@
     }
     return 'Sin bono permanente.';
   }
-  function textoAtaque(sg) {
-    const c = sg.combo;
+  function textoAtaque(sg, trio) {
+    const c = sg.combo, cuantas = trio ? 'las tres torres' : 'las dos torres';
     let t = c.tipo === 'area' ? 'La ' + D.torres[c.desde].nombre.toLowerCase() + ' lanza una carga que estalla en un radio de ' + c.radio + ' sobre su objetivo'
-      : c.tipo === 'linea' ? 'Las dos torres disparan un rayo que atraviesa a todos los enemigos en su línea'
+      : c.tipo === 'linea' ? (trio ? 'Las tres torres disparan' : 'Las dos torres disparan') + ' un rayo que atraviesa a todos los enemigos en su línea'
       : c.tipo === 'cadena' ? 'La torre de rayos lanza una descarga que salta ' + c.saltos + ' veces entre enemigos cercanos, sin perder fuerza'
       : c.tipo === 'minas' ? 'La minadora siembra ' + c.minas + ' minas extra (puede pasar de su máximo)'
-      : 'Onda de radio ' + c.radio + ' alrededor de las dos torres (solo enemigos en tierra)';
-    t += ': ' + c.dano + ' de daño, más ' + c.danoPorMejora + ' por cada mejora de las dos torres.';
+      : 'Onda de radio ' + c.radio + ' alrededor de ' + cuantas + ' (solo enemigos en tierra)';
+    t += ': ' + c.dano + ' de daño, más ' + c.danoPorMejora + ' por cada mejora de ' + cuantas + '.';
     if (c.congela) t += ' Congela ' + dec(c.congela) + ' s.';
     if (c.aturde) t += ' Aturde ' + dec(c.aturde) + ' s.';
     return t;
@@ -1944,6 +1992,18 @@
       h += '<div class="mcard ' + (sg.combo.efecto || 'fuego') + '"><div class="mcab">' + ICONO[a] + '<em>+</em>' + ICONO[b] + '<div><b>' + sg.nombre + '</b><span>' + D.torres[a].nombre + ' + ' + D.torres[b].nombre + '</span></div></div>' +
         '<p><b>Bono:</b> ' + textoBono(sg) + '</p>' +
         '<p><b>Ataque especial</b> (carga en ' + sg.combo.cargaSeg + ' s): ' + textoAtaque(sg) + '</p></div>';
+    }
+    return h;
+  }
+
+  function manualTrios() {
+    let h = '<h3>Combos de 3 torres</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, forman un trío si sus tipos coinciden con uno de la lista.</li>' +
+      '<li>El trío <b>se suma</b> a los combos de 2 que ya tienen: no los apaga.</li>' +
+      '<li>Su medidor es un <b>triángulo magenta</b> al centro de las tres. Carga mientras alguna tiene enemigos a tiro y no se reparte con otros combos.</li>' +
+      '<li>No da bono permanente: es un ataque especial más fuerte, que crece con las mejoras de las tres torres.</li></ul>';
+    for (const sg of D.trios || []) {
+      h += '<div class="mcard ' + (sg.combo.efecto || 'fuego') + '"><div class="mcab">' + sg.entre.map(x => ICONO[x]).join('<em>+</em>') + '<div><b>' + sg.nombre + '</b><span>' + sg.entre.map(x => D.torres[x].corto).join(' + ') + '</span></div></div>' +
+        '<p><b>Ataque</b> (carga en ' + sg.combo.cargaSeg + ' s): ' + textoAtaque(sg, true) + '</p></div>';
     }
     return h;
   }
@@ -1968,7 +2028,7 @@
   }
 
   function pintarManual() {
-    const cuerpo = { jugar: manualJugar, torres: manualTorres, combos: manualCombos, enemigos: manualEnemigos }[manualTab]();
+    const cuerpo = { jugar: manualJugar, torres: manualTorres, combos: manualCombos, trios: manualTrios, enemigos: manualEnemigos }[manualTab]();
     $('manualCuerpo').innerHTML = cuerpo;
     $('manualCuerpo').scrollTop = 0;
     for (const b of $('manualTabs').children) b.classList.toggle('sel', b.dataset.tab === manualTab);

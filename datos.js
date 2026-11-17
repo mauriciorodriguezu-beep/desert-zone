@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.9.1',
+  version: '0.10',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -347,6 +347,37 @@ const DATOS = {
     { id: 'tormenta', nombre: 'Tormenta', entre: ['rayo', 'rayo'], para: 'rayo',
       bono: { stat: 'cadencia', mult: 0.85 },
       combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 9, dano: 80, danoPorMejora: 6, saltos: 10, radioSalto: 80, texto: 'descarga de 10 saltos' } }
+  ],
+
+  /* COMBOS DE 3 TORRES (tríos): tres torres pegadas entre sí, en triángulo (las tres a distCombo px o menos
+     unas de otras). Se SUMAN a los combos de 2 que ya forman. No dan bono permanente: solo un ataque especial.
+     - Su medidor aparece al centro del triángulo y carga mientras alguna de las tres tiene enemigos a tiro.
+       No reparte carga: cada trío carga en "cargaSeg" segundos aunque la torre esté en varios.
+     - "entre" son los tres tipos (el orden no importa; se pueden repetir).
+     - combo: igual que en los combos de 2 ('area', 'linea', 'onda', 'cadena', 'minas'). En 'linea' disparan
+       las tres torres; en 'onda' la onda sale del centro del triángulo. "danoPorMejora" cuenta las mejoras
+       de las tres torres. */
+  trios: [
+    { id: 'aceroT', nombre: 'Tormenta de acero', entre: ['ametralladora', 'ametralladora', 'ametralladora'],
+      combo: { tipo: 'linea', efecto: 'fuego', cargaSeg: 16, dano: 60, danoPorMejora: 4, largo: 230, ancho: 14, texto: 'tres ráfagas que atraviesan' } },
+    { id: 'ventiscaT', nombre: 'Ventisca eterna', entre: ['crio', 'crio', 'crio'],
+      combo: { tipo: 'onda', efecto: 'hielo', cargaSeg: 16, dano: 60, danoPorMejora: 4, radio: 140, congela: 3, texto: 'onda enorme que congela 3 s' } },
+    { id: 'impactoT', nombre: 'Triple impacto', entre: ['ametralladora', 'crio', 'plasma'],
+      combo: { tipo: 'area', desde: 'plasma', efecto: 'plasma', cargaSeg: 14, dano: 250, danoPorMejora: 9, radio: 50, congela: 1.5, texto: 'golpe de plasma que congela' } },
+    { id: 'bombardeoT', nombre: 'Bombardeo total', entre: ['misiles', 'misiles', 'misiles'],
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 15, dano: 200, danoPorMejora: 9, radio: 100, aturde: 1, texto: 'explosión gigante que aturde' } },
+    { id: 'redT', nombre: 'Red eléctrica', entre: ['rayo', 'rayo', 'rayo'],
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 15, dano: 140, danoPorMejora: 8, saltos: 15, radioSalto: 90, aturde: 0.6, texto: 'descarga de 15 saltos' } },
+    { id: 'prismaT', nombre: 'Prisma triple', entre: ['laser', 'laser', 'laser'],
+      combo: { tipo: 'linea', efecto: 'laser', cargaSeg: 15, dano: 200, danoPorMejora: 9, largo: 300, ancho: 20, texto: 'tres haces muy largos' } },
+    { id: 'exterminioT', nombre: 'Campo de exterminio', entre: ['minas', 'minas', 'minas'],
+      combo: { tipo: 'minas', desde: 'minas', efecto: 'fuego', cargaSeg: 14, dano: 150, danoPorMejora: 7, minas: 10, texto: 'siembra 10 minas potentes' } },
+    { id: 'escudoT', nombre: 'Escudo antiaéreo', entre: ['ametralladora', 'misiles', 'rayo'],
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'rayo', cargaSeg: 14, dano: 180, danoPorMejora: 8, radio: 80, aturde: 1, texto: 'explosión eléctrica, también contra drones' } },
+    { id: 'fusionT', nombre: 'Fusión', entre: ['plasma', 'laser', 'rayo'],
+      combo: { tipo: 'linea', efecto: 'plasma', cargaSeg: 15, dano: 260, danoPorMejora: 10, largo: 260, ancho: 18, texto: 'tres rayos de plasma' } },
+    { id: 'trampaT', nombre: 'Trampa helada', entre: ['minas', 'crio', 'misiles'],
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'hielo', cargaSeg: 14, dano: 150, danoPorMejora: 8, radio: 90, congela: 2.5, texto: 'explosión helada grande' } }
   ],
 
   /* ENEMIGOS
