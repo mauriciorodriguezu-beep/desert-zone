@@ -64,6 +64,40 @@
   #barra button.activo { background: #13233d; border-color: var(--azul); color: var(--azul); }
 
   #mapa { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0e1a; }
+  /* Manual del juego: pantalla completa con pestañas y contenido desplazable */
+  #manual { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; background: #070a13; }
+  #manualCab { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; }
+  #manualCab b { font-size: 18px; }
+  #manualCerrar { width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--linea); background: var(--caja); font-size: 18px; color: var(--texto); }
+  #manualTabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 0 12px 10px; border-bottom: 1px solid var(--linea); }
+  #manualTabs button { height: 38px; border-radius: 8px; border: 1px solid var(--linea); background: var(--caja); font-size: 13px; font-weight: 600; color: var(--tenue); }
+  #manualTabs button.sel { border-color: var(--azul); background: #0f1e35; color: var(--texto); }
+  #manualCuerpo { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 4px 14px 28px; font-size: 14px; line-height: 1.5; color: #c6d2e3; }
+  #manualCuerpo h3 { font-size: 15px; color: var(--texto); margin: 18px 0 4px; }
+  #manualCuerpo p { margin: 0 0 8px; }
+  #manualCuerpo ol, #manualCuerpo ul { margin: 0 0 8px; padding-left: 20px; }
+  #manualCuerpo li { margin-bottom: 4px; }
+  #manualCuerpo b { color: var(--texto); }
+  #manualCuerpo .mnota { color: var(--tenue); font-size: 13px; margin-top: 12px; }
+  .mcard { background: var(--caja); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .mcard.hielo { border-color: #2f86ad; } .mcard.plasma { border-color: #6a4fb0; } .mcard.fuego { border-color: #8a6a1a; }
+  .mcard p { font-size: 13px; }
+  .mcard ul { font-size: 13px; }
+  .mcab { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .mcab svg { flex: none; }
+  .mcab em { font-style: normal; color: var(--tenue); }
+  .mcab > div { margin-left: 4px; min-width: 0; }
+  .mcab b { display: block; font-size: 15px; }
+  .mcab span { font-size: 12px; color: var(--tenue); }
+  .mcard .mdato { color: var(--tenue); margin-bottom: 4px; }
+  .mcard table { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
+  .mcard th { text-align: left; font-size: 12px; font-weight: 600; color: var(--tenue); width: 24%; padding: 5px 0; border-top: 1px solid var(--linea); }
+  .mcard td { text-align: center; padding: 5px 2px; border-top: 1px solid var(--linea); font-variant-numeric: tabular-nums; }
+  .mcard td b { display: block; font-size: 13px; }
+  .mcard td i { display: block; font-style: normal; font-size: 11px; color: var(--azul); }
+  .mcard td span { display: block; font-size: 11px; color: var(--oro); }
+  #veloManual { height: 40px; padding: 0 22px; border-radius: 10px; font-size: 14px; font-weight: 600; background: var(--caja); border: 1px solid var(--linea); color: var(--texto); }
+  #manualCerrar:focus-visible, #manualTabs button:focus-visible, #veloManual:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
   /* Franja de pausa: no tapa el mapa, se puede seguir construyendo */
   #pausa {
     position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
@@ -75,6 +109,7 @@
     pointer-events: auto; height: 40px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 700;
     border: 1px solid #1f6a44; background: #10301f; color: #8fe0b6;
   }
+  #pausa #btnManual { border-color: var(--linea); background: #111a2c; color: var(--texto); }
   #pausa #btnReiniciar { border-color: #6a3a0a; background: #2a1a0a; color: #e0a060; }
   #pausa #btnReiniciar.confirmar { border-color: #b3261e; background: #5a1410; color: #ffd9d4; }
   #pausa button:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
@@ -171,7 +206,7 @@
   </div>
   <div id="aviso"></div>
   <div id="mapa">
-    <div id="pausa" hidden><span>En pausa</span><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button></div>
+    <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnManual">Manual</button></div>
   </div>
   <section id="panel">
     <div id="torres"></div>
@@ -189,12 +224,18 @@
       </div>
     </div>
   </section>
+  <div id="manual" hidden>
+    <div id="manualCab"><b>Manual del juego</b><button id="manualCerrar" aria-label="Cerrar manual">✕</button></div>
+    <div id="manualTabs"><button data-tab="jugar">Jugar</button><button data-tab="torres">Torres</button><button data-tab="combos">Combos</button><button data-tab="enemigos">Enemigos</button></div>
+    <div id="manualCuerpo"></div>
+  </div>
   <div id="velo">
     <h1 id="veloTitulo"></h1>
     <p id="veloSub"></p>
     <div id="veloMapas"></div>
     <div id="veloDatos"></div>
     <button id="veloBoton">Jugar</button>
+    <button id="veloManual">Manual del juego</button>
     <p id="veloCredito"></p>
   </div>
 </div>

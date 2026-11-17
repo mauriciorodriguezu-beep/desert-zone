@@ -1416,6 +1416,117 @@
     refrescarTodo();
   }
 
+  // ───────────────────────── MANUAL ─────────────────────────
+  // Se arma con los valores de datos.js, así siempre coincide con el juego.
+  const pct = x => Math.round(x * 100) + '%';
+  const NOMBRE_DANO = { fisico: 'físico', energia: 'de energía', explosivo: 'explosivo' };
+  let manualTab = 'jugar';
+
+  function manualJugar() {
+    const o = D.oleada, jefes = [];
+    MAPA.oleadas.forEach((ol, i) => { if (ol.some(q => D.enemigos[q.tipo].jefe)) jefes.push(i + 1); });
+    return '<h3>Objetivo</h3><p>Defiende la base. Empiezas con <b>' + D.inicio.vidas + ' vidas</b> y <b>' + D.inicio.creditos + ' créditos</b>. Cada enemigo que llega a la base te quita una vida; los jefes quitan varias. Si llegas a cero, pierdes.</p>' +
+      '<h3>Construir</h3><ol><li>Toca una torre en el panel de abajo.</li><li>Toca el lugar del campo donde la quieres. Aparece en transparencia con su alcance.</li><li>Arrástrala para afinar la posición y toca <b>Construir</b>.</li></ol><p>No se puede construir sobre el camino, sobre la base ni encima de otra torre.</p>' +
+      '<h3>Mejorar y vender</h3><p>Toca una torre ya construida. Cada torre tiene <b>tres atributos</b> que se mejoran por separado, con tres niveles cada uno. <b>Vender</b> devuelve el ' + pct(D.venta) + ' de todo lo que invertiste en ella.</p>' +
+      '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
+      '<h3>Oleadas</h3><p>Cada escenario tiene <b>' + TOTAL_OLEADAS + ' oleadas</b>. En ' + MAPA.nombre + ' hay jefe en las oleadas ' + jefes.join(', ') + '. Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p>' +
+      '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
+      '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
+      '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
+  }
+
+  function manualTorres() {
+    let h = '<p class="mnota">Cada atributo se compra por separado. Se muestra el valor de cada nivel y su costo.</p>';
+    for (const tipo in D.torres) {
+      const def = D.torres[tipo];
+      h += '<div class="mcard"><div class="mcab">' + ICONO[tipo] + '<div><b>' + def.nombre + '</b><span>' + def.costo + ' créditos</span></div></div>' +
+        '<p>' + def.desc + '</p>' +
+        '<p class="mdato">' + (def.arma ? 'Daño ' + NOMBRE_DANO[def.tipoDano] + ' · ataca ' + (def.antiaerea ? 'tierra y aire' : 'solo tierra') : 'No dispara · afecta solo a enemigos en tierra') + '</p>' +
+        '<p class="mdato">Al construir: ' + textoStats(tipo, statsDe(tipo, null)) + '</p><table>';
+      for (const id in def.atributos) {
+        const at = def.atributos[id], ver = VER[id] || (() => '');
+        h += '<tr><th>' + at.nombre + '</th>';
+        at.niveles.forEach((nv, i) => {
+          const niv = {}; niv[id] = i + 1;
+          h += '<td><b>' + ver(statsDe(tipo, niv)) + '</b>' + (nv.nota ? '<i>' + nv.nota + '</i>' : '') + '<span>' + nv.costo + 'cr</span></td>';
+        });
+        h += '</tr>';
+      }
+      h += '</table></div>';
+    }
+    return h;
+  }
+
+  function textoBono(sg) {
+    if (!sg.para) return 'Sin bono permanente.';
+    const quien = D.torres[sg.para].nombre;
+    if (sg.danoALentos) return quien + ': +' + pct(sg.danoALentos - 1) + ' de daño a enemigos ralentizados o congelados.';
+    if (sg.bono) {
+      const b = sg.bono;
+      if (b.stat === 'cadencia') return quien + ': dispara ' + pct(1 - b.mult) + ' más rápido.';
+      const que = { alcance: 'de alcance', dano: 'de daño', radio: 'de radio de explosión' }[b.stat] || 'de ' + b.stat;
+      return quien + ': +' + pct(b.mult - 1) + ' ' + que + '.';
+    }
+    return 'Sin bono permanente.';
+  }
+  function textoAtaque(sg) {
+    const c = sg.combo;
+    let t = c.tipo === 'area' ? 'La ' + D.torres[c.desde].nombre.toLowerCase() + ' lanza una carga que estalla en un radio de ' + c.radio + ' sobre su objetivo'
+      : c.tipo === 'linea' ? 'Las dos torres disparan un rayo que atraviesa a todos los enemigos en su línea'
+      : 'Onda de radio ' + c.radio + ' alrededor de las dos torres (solo enemigos en tierra)';
+    t += ': ' + c.dano + ' de daño, más ' + c.danoPorMejora + ' por cada mejora de las dos torres.';
+    if (c.congela) t += ' Congela ' + dec(c.congela) + ' s.';
+    if (c.aturde) t += ' Aturde ' + dec(c.aturde) + ' s.';
+    return t;
+  }
+  function manualCombos() {
+    let h = '<h3>Cómo funcionan</h3><ul><li>Dos torres <b>pegadas</b> forman un combo. Al ubicar una torre, las vecinas con las que combina muestran un círculo dorado punteado: si la sueltas dentro, hay combo.</li>' +
+      '<li>Entre las dos torres aparece un <b>círculo que se llena</b> mientras alguna tiene enemigos a tiro. Al llenarse, el ataque especial sale solo.</li>' +
+      '<li>Además, una de las torres recibe un <b>bono permanente</b>.</li>' +
+      '<li>Una torre con varias vecinas <b>reparte su carga</b>: con dos combos, cada uno tarda el doble.</li>' +
+      '<li>El ataque especial ignora las resistencias del enemigo y pega más fuerte mientras más mejoras tengan las dos torres.</li>' +
+      '<li>Los jefes no se congelan ni se aturden.</li></ul><h3>Los ' + D.sinergias.length + ' combos</h3>';
+    for (const sg of D.sinergias) {
+      const a = sg.entre[0], b = sg.entre[1];
+      h += '<div class="mcard ' + (sg.combo.efecto || 'fuego') + '"><div class="mcab">' + ICONO[a] + '<em>+</em>' + ICONO[b] + '<div><b>' + sg.nombre + '</b><span>' + D.torres[a].nombre + ' + ' + D.torres[b].nombre + '</span></div></div>' +
+        '<p><b>Bono:</b> ' + textoBono(sg) + '</p>' +
+        '<p><b>Ataque especial</b> (carga en ' + sg.combo.cargaSeg + ' s): ' + textoAtaque(sg) + '</p></div>';
+    }
+    return h;
+  }
+
+  function manualEnemigos() {
+    const esc = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
+    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.</p>';
+    for (const id in D.enemigos) {
+      const e = D.enemigos[id], notas = [];
+      if (e.aereo) notas.push('Vuela en línea recta de la entrada a la base. Solo le disparan las torres que atacan aire y el frío no le afecta.');
+      for (const k in e.resist) {
+        if (e.resist[k] < 1) notas.push('Resiste el daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
+        if (e.resist[k] > 1) notas.push('Débil al daño ' + NOMBRE_DANO[k] + ': recibe ' + pct(e.resist[k]) + '.');
+      }
+      if (e.resFrio != null && e.resFrio < 1) notas.push('El frío lo frena solo ' + pct(e.resFrio) + ' de lo normal.');
+      if (e.noCongela) notas.push('No se puede congelar ni aturdir.');
+      h += '<div class="mcard"><div class="mcab"><div><b>' + e.nombre + '</b><span>Vida ' + cr(e.vida) + ' · velocidad ' + e.vel + ' · premio ' + e.premio + 'cr · quita ' + (e.vidas || 1) + (e.vidas > 1 ? ' vidas' : ' vida') + '</span></div></div>' +
+        (notas.length ? '<ul><li>' + notas.join('</li><li>') + '</li></ul>' : '<p>Sin resistencias ni debilidades.</p>') + '</div>';
+    }
+    return h;
+  }
+
+  function pintarManual() {
+    const cuerpo = { jugar: manualJugar, torres: manualTorres, combos: manualCombos, enemigos: manualEnemigos }[manualTab]();
+    $('manualCuerpo').innerHTML = cuerpo;
+    $('manualCuerpo').scrollTop = 0;
+    for (const b of $('manualTabs').children) b.classList.toggle('sel', b.dataset.tab === manualTab);
+  }
+  function abrirManual(tab) {
+    if (G.fase === 'jugando') G.pausa = true;   // el juego queda en pausa mientras lees
+    if (tab) manualTab = tab;
+    pintarManual();
+    $('manual').hidden = false;
+    refrescarTodo();
+  }
+
   let reinicioArmado = false, tReinicio = 0;
   function desarmarReinicio() {
     if (!reinicioArmado) return;
@@ -1435,6 +1546,10 @@
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
     // Velocidad: ×1 → ×2 → ×3 → ×1
     $('btnVel').addEventListener('click', () => { G.vel = G.vel >= 3 ? 1 : G.vel + 1; refrescarTodo(); });
+    $('btnManual').addEventListener('click', () => abrirManual());
+    $('veloManual').addEventListener('click', () => abrirManual());
+    $('manualCerrar').addEventListener('click', () => { $('manual').hidden = true; });
+    for (const b of $('manualTabs').children) b.addEventListener('click', () => { manualTab = b.dataset.tab; pintarManual(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
     // Reiniciar pide un segundo toque para no perder la partida por error
     $('btnReiniciar').addEventListener('click', () => {
