@@ -130,7 +130,7 @@
     G.fase = 'jugando';
     G.creditos = D.inicio.creditos;
     G.vidas = D.inicio.vidas;
-    G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0; G.rutaSig = 0;
+    G.oleada = 0; G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
@@ -384,13 +384,17 @@
   }
 
   // Oleadas
+  // Oleadas en juego: las que todavía tienen enemigos por salir o vivos
+  const enJuego = () => Object.keys(G.pendientes).filter(k => G.pendientes[k] > 0).length;
+  // Bono por adelantar. Sin oleadas en juego: segundos de cuenta regresiva ahorrados (se paga al llamar).
+  // Con k oleadas en juego: k × bonoPorEnJuego, que se paga al limpiar la oleada llamada.
   function bonoAdelanto() {
     if (G.oleada === 0) return 0;
-    const seg = G.enemigos.length ? D.oleada.esperaSeg : Math.ceil(G.cuenta);
-    return seg * D.oleada.bonoAdelantoPorSeg;
+    const k = enJuego();
+    return k ? k * D.oleada.bonoPorEnJuego : Math.ceil(G.cuenta) * D.oleada.bonoAdelantoPorSeg;
   }
   function puedeIniciar() {
-    return G.fase === 'jugando' && !G.generando && G.oleada < TOTAL_OLEADAS;
+    return G.fase === 'jugando' && G.oleada < TOTAL_OLEADAS && enJuego() < D.oleada.maxEnJuego;
   }
   // Enemigos de la oleada n. Las primeras vienen escritas en datos.js; las demás se generan con una
   // pauta fija que crece con el número de oleada (bloque "generador" de datos.js).
@@ -454,8 +458,13 @@
   const oleadaConJefe = n => gruposDe(n).some(g => D.enemigos[g.tipo].jefe);
   function iniciarOleada(conBono) {
     if (!puedeIniciar()) return false;
-    if (conBono) G.creditos += bonoAdelanto();
+    let pendiente = 0;
+    if (conBono) {
+      if (enJuego()) pendiente = bonoAdelanto();   // se cobra al limpiar esta oleada
+      else G.creditos += bonoAdelanto();
+    }
     G.oleada++;
+    if (pendiente) G.bonoPend[G.oleada] = pendiente;
     const grupos = gruposDe(G.oleada);
     const cola = [];
     let fin = 0;
@@ -465,9 +474,9 @@
       fin = Math.max(fin, t0 + (g.n - 1) * g.cada);
     }
     cola.sort((a, b) => a.t - b.t);
-    G.cola = cola;
+    // Cada oleada sale por su cuenta: puede haber varias saliendo a la vez
+    G.salidas.push({ oleada: G.oleada, cola, t: 0 });
     G.pendientes[G.oleada] = cola.length;
-    G.tOleada = 0;
     G.generando = true;
     G.enCuenta = false; G.cuenta = 0;
     if (oleadaConJefe(G.oleada)) aviso('¡Jefe en camino!');
@@ -489,9 +498,11 @@
   function resolverEnemigo(e) {
     e.vivo = false;
     if (--G.pendientes[e.oleada] === 0) {
-      const bono = D.oleada.bonoBase + D.oleada.bonoPorOleada * e.oleada;
+      const extra = G.bonoPend[e.oleada] || 0;
+      const bono = D.oleada.bonoBase + D.oleada.bonoPorOleada * e.oleada + extra;
       G.creditos += bono;
-      aviso('Oleada ' + e.oleada + ' superada · +' + bono + 'cr');
+      delete G.bonoPend[e.oleada];
+      aviso('Oleada ' + e.oleada + ' superada · +' + bono + 'cr' + (extra ? ' (incluye ' + extra + ' por adelantar)' : ''));
       guardar();
     }
   }
@@ -746,9 +757,12 @@
 
     // Salida de enemigos
     if (G.generando) {
-      G.tOleada += dt;
-      while (G.cola.length && G.cola[0].t <= G.tOleada) crearEnemigo(G.cola.shift().tipo, G.oleada);
-      if (!G.cola.length) G.generando = false;
+      for (const sa of G.salidas) {
+        sa.t += dt;
+        while (sa.cola.length && sa.cola[0].t <= sa.t) crearEnemigo(sa.cola.shift().tipo, sa.oleada);
+      }
+      G.salidas = G.salidas.filter(sa => sa.cola.length);
+      if (!G.salidas.length) G.generando = false;
     }
 
     // Efectos de las torres criogénicas (se recalculan en cada paso)
@@ -2109,9 +2123,9 @@
     let txt, on = true;
     if (G.fase !== 'jugando') { txt = '—'; on = false; }
     else if (G.oleada === 0) txt = '▶ Iniciar oleada 1';
-    else if (G.generando) { txt = 'Oleada ' + G.oleada + (oleadaConJefe(G.oleada) ? ' (JEFE)' : '') + ' en curso'; on = false; }
     else if (G.oleada >= TOTAL_OLEADAS) { txt = 'Última oleada'; on = false; }
-    else if (G.enemigos.length) txt = '▶ Adelantar oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · +' + bonoAdelanto() + 'cr';
+    else if (enJuego() >= D.oleada.maxEnJuego) { txt = 'Máximo: ' + D.oleada.maxEnJuego + ' oleadas en juego'; on = false; }
+    else if (enJuego()) txt = '▶ Adelantar ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · ' + enJuego() + '/' + D.oleada.maxEnJuego + ' en juego · +' + bonoAdelanto() + 'cr al limpiar';
     else txt = '▶ Oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' en ' + Math.ceil(G.cuenta) + ' s · +' + bonoAdelanto() + 'cr';
     poner(b, 'textContent', txt);
     poner(b, 'disabled', !on);
@@ -2215,7 +2229,7 @@
       '<h3>Modo berserk</h3><p>Cuando una torre tiene sus <b>tres atributos al máximo</b> entra en modo berserk: aparece un marco rojo y, mientras tenga enemigos a tiro, carga un ataque de mayor potencia que se dispara solo cada cierto tiempo. El ataque de cada torre está en la pestaña <b>Torres</b>.</p>' +
       '<h3>Mover torres</h3><p>Toca una torre y luego <b>Mover</b>: cuesta el ' + pct(D.mover.factor) + ' de lo invertido en ella (precio más mejoras). Conserva sus mejoras; sus combos se recalculan según sus nuevas vecinas.</p>' +
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
-      '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p>' +
+      '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p><p><b>Adelantar con enemigos en el mapa:</b> puedes llamar la siguiente oleada aunque la actual siga en curso, hasta tener ' + o.maxEnJuego + ' oleadas en juego a la vez. Cada llamada da ' + o.bonoPorEnJuego + ' créditos por cada oleada que ya estaba en juego, y se cobran al limpiar la oleada que llamaste.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
       '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';

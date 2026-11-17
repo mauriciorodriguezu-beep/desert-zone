@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.12.1',
+  version: '0.13',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -32,7 +32,12 @@ const DATOS = {
     bonoBase: 20,           // bono al limpiar una oleada = bonoBase + bonoPorOleada x número de oleada
     bonoPorOleada: 5,
     esperaSeg: 10,          // cuenta regresiva entre oleadas
-    bonoAdelantoPorSeg: 3,  // cr por cada segundo adelantado (con enemigos vivos cuenta como esperaSeg completos)
+    bonoAdelantoPorSeg: 3,  // cr por cada segundo de cuenta regresiva que te ahorras (se paga al llamar)
+    // ADELANTAR CON ENEMIGOS EN JUEGO: se pueden tener hasta "maxEnJuego" oleadas a la vez (saliendo o con
+    // enemigos vivos). Llamar una oleada con k oleadas ya en juego da k × bonoPorEnJuego créditos, que se
+    // pagan recién al limpiar esa oleada (si te sobrepasan, no ganas nada).
+    maxEnJuego: 5,
+    bonoPorEnJuego: 25,
     escalaVida: 0.27,       // cada oleada los enemigos tienen +27% de vida respecto de la primera
     // Refuerzo de vida para todos los enemigos, con curva cuadrática (suave al principio, fuerte al final):
     // parte en "extra" en la oleada "desde" y llega a "extraEn" en la oleada "hasta" (0.05 = 5%).
