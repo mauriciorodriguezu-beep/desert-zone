@@ -73,7 +73,7 @@
     TODOS = RUTAS.flatMap(R => R.tramos);
     const a = PUNTOS[0], b = PUNTOS[PUNTOS.length - 1];
     AIRE = { a, b, l: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
-    if (escena) pintarMapa();
+    if (escena) { pintarMapa(); zoomInicial(); }
   }
   // Posición y recorrido total de un enemigo: los aéreos vuelan en línea recta, el resto sigue el camino
   // (solo vuelan recto los aéreos marcados con rutaRecta en datos.js; hoy ninguno)
@@ -1059,7 +1059,7 @@
     alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2, rotativo: 0xffffff, glacial: 0xdff6ff, domo: 0xffe9c9, reactor: 0xffd9f3, nucleo: 0xdff6ff, artilleria: 0xffe9c9, tesla: 0xfff7c2, prismatico: 0xffd9d9, minero: 0xf3e6b8, criobomba: 0xdff6ff }
   };
   const ANCHO_CAMINO = 24;
-  let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
+  let escena = null, gDin = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
   let flotantes = [];
 
   // Números "al azar" repetibles: el terreno sale igual en cada partida
@@ -1817,43 +1817,98 @@
       }
     }
 
-    // Barra de vida del jefe, arriba del campo
+    // Barra de vida del jefe: va en la página (no en el mapa) para que se vea aunque haya zoom
     const jefe = G.enemigos.find(e => e.def.jefe && e.vivo);
-    if (txtJefe) txtJefe.setVisible(!!jefe);
-    if (jefe) {
-      const k = Math.max(0, jefe.vida / jefe.vidaMax), bw = 190, bx = (W - bw) / 2;
-      g.fillStyle(0x140d0c, 0.85).fillRoundedRect(bx - 34, 4, bw + 40, 14, 4);
-      g.fillStyle(0x4a1513, 1).fillRect(bx, 8, bw, 6);
-      g.fillStyle(0xe5342a, 1).fillRect(bx, 8, bw * k, 6);
-      g.lineStyle(1, COL.oro, 0.9).strokeRect(bx, 8, bw, 6);
-    }
+    mostrar($('barraJefe'), !!jefe);
+    if (jefe) poner($('barraJefeVida').style, 'width', Math.round(Math.max(0, jefe.vida / jefe.vidaMax) * 100) + '%');
+  }
+
+  // ── Zoom del mapa: pellizcar con dos dedos, rueda del mouse o botones + / −. Con zoom, un dedo arrastra el mapa ──
+  const ZMAX = 2.5;
+  let zoomMapa = 1;
+  // Cambia el zoom dejando fijo el punto del mapa que está bajo (sx, sy) en la pantalla del juego
+  function fijarZoom(z, sx, sy) {
+    if (!escena) return;
+    const cam = escena.cameras.main, w = cam.width, h = cam.height;
+    z = Math.max(1, Math.min(ZMAX, z));
+    if (sx == null) { sx = w / 2; sy = h / 2; }
+    const z0 = ESC * zoomMapa, z1 = ESC * z;
+    const px = cam.scrollX + w / 2 + (sx - w / 2) / z0, py = cam.scrollY + h / 2 + (sy - h / 2) / z0;
+    zoomMapa = z;
+    cam.setZoom(z1);
+    cam.setScroll(px - (sx - w / 2) / z1 - w / 2, py - (sy - h / 2) / z1 - h / 2);
+    mostrar($('zoomMenos'), z > 1.01);
+  }
+  function zoomInicial() {
+    if (!escena) return;
+    zoomMapa = 1;
+    const cam = escena.cameras.main;
+    cam.setZoom(ESC);
+    cam.centerOn(W / 2, H / 2);
+    mostrar($('zoomMenos'), false);
   }
 
   const escenaJuego = {
     create() {
       escena = this;
       const cam = this.cameras.main;
+      cam.setBounds(0, 0, W, H);
       cam.setZoom(ESC);
       cam.centerOn(W / 2, H / 2);
+      this.input.addPointer(1);   // segundo dedo, para pellizcar
       gFondo = this.add.graphics();
       const estilo = { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: '#5a3d1a' };
       txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
       pintarMapa();
       gDin = this.add.graphics().setDepth(2);
-      txtJefe = this.add.text((W - 190) / 2 - 30, 5.5, 'JEFE', { fontFamily: 'system-ui, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#ffd23f' }).setResolution(ESC).setDepth(4).setVisible(false);
       this.input.mouse && this.input.mouse.disableContextMenu();
-      // Tocar ubica la torre; arrastrar el dedo la mueve antes de confirmar
-      let arrastre = false;
+      // Toques: al construir o mover, tocar ubica la torre y arrastrar la acomoda (como siempre).
+      // En otro caso, el toque se resuelve al soltar: si el dedo no se movió es un toque normal; si se movió
+      // y hay zoom, arrastra el mapa. Dos dedos: pellizcar para acercar o alejar.
+      let arrastre = false, toque = null, pinza = null;
+      const p1 = () => this.input.pointer1, p2 = () => this.input.pointer2;
+      const dosDedos = () => p1().isDown && p2().isDown;
+      const umbral = 7 * ESC;
       this.input.on('pointerdown', p => {
+        if (dosDedos()) {
+          const a = p1(), b = p2();
+          pinza = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: zoomMapa };
+          toque = null; arrastre = false;
+          return;
+        }
         const pt = cam.getWorldPoint(p.x, p.y);
-        arrastre = tocarMapa(pt.x, pt.y);
+        if (G.tipoSel || G.moviendo) { arrastre = tocarMapa(pt.x, pt.y); toque = null; return; }
+        toque = { x: p.x, y: p.y, sx: cam.scrollX, sy: cam.scrollY, movio: false };
       });
       this.input.on('pointermove', p => {
-        if (!arrastre || !p.isDown || !G.tipoSel || G.fase !== 'jugando') return;
-        const pt = cam.getWorldPoint(p.x, p.y);
-        G.puntoSel = ajustar(pt.x, pt.y);
+        if (pinza) {
+          if (!dosDedos()) return;
+          const a = p1(), b = p2();
+          fijarZoom(pinza.z * Math.hypot(a.x - b.x, a.y - b.y) / pinza.d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+          return;
+        }
+        if (arrastre) {
+          if (!p.isDown || !G.tipoSel || G.fase !== 'jugando') return;
+          const pt = cam.getWorldPoint(p.x, p.y);
+          G.puntoSel = ajustar(pt.x, pt.y);
+          return;
+        }
+        if (toque && p.isDown) {
+          const dx = p.x - toque.x, dy = p.y - toque.y;
+          if (!toque.movio && Math.hypot(dx, dy) > umbral) toque.movio = true;
+          if (toque.movio && zoomMapa > 1) cam.setScroll(toque.sx - dx / cam.zoom, toque.sy - dy / cam.zoom);
+        }
       });
-      this.input.on('pointerup', () => { arrastre = false; });
+      this.input.on('pointerup', p => {
+        if (pinza) { if (!dosDedos()) pinza = null; toque = null; arrastre = false; return; }
+        if (toque && !toque.movio) {
+          const pt = cam.getWorldPoint(p.x, p.y);
+          tocarMapa(pt.x, pt.y);
+        }
+        toque = null; arrastre = false;
+      });
+      // Rueda del mouse (PC): acerca o aleja donde está el puntero
+      this.input.on('wheel', (p, objs, dx, dy) => fijarZoom(zoomMapa * (dy < 0 ? 1.2 : 1 / 1.2), p.x, p.y));
       listo = true;
       refrescarTodo();
     },
@@ -2125,7 +2180,7 @@
     else if (G.oleada === 0) txt = '▶ Iniciar oleada 1';
     else if (G.oleada >= TOTAL_OLEADAS) { txt = 'Última oleada'; on = false; }
     else if (enJuego() >= D.oleada.maxEnJuego) { txt = 'Máximo: ' + D.oleada.maxEnJuego + ' oleadas en juego'; on = false; }
-    else if (enJuego()) txt = '▶ Adelantar ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · ' + enJuego() + '/' + D.oleada.maxEnJuego + ' en juego · +' + bonoAdelanto() + 'cr al limpiar';
+    else if (enJuego()) txt = '▶ Adelantar ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · ' + enJuego() + '/' + D.oleada.maxEnJuego + ' · +' + bonoAdelanto() + 'cr';
     else txt = '▶ Oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' en ' + Math.ceil(G.cuenta) + ' s · +' + bonoAdelanto() + 'cr';
     poner(b, 'textContent', txt);
     poner(b, 'disabled', !on);
@@ -2232,6 +2287,7 @@
       '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p><p><b>Adelantar con enemigos en el mapa:</b> puedes llamar la siguiente oleada aunque la actual siga en curso, hasta tener ' + o.maxEnJuego + ' oleadas en juego a la vez. Cada llamada da ' + o.bonoPorEnJuego + ' créditos por cada oleada que ya estaba en juego, y se cobran al limpiar la oleada que llamaste.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
+      '<h3>Zoom</h3><p>Pellizca el mapa con dos dedos (o usa la rueda del mouse, o los botones <b>+</b> y <b>−</b> a la derecha) para acercarte. Con zoom, arrastra un dedo para moverte por el mapa. Al construir o mover una torre, arrastrar acomoda la torre y no el mapa.</p>' +
       '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
   }
 
@@ -2378,6 +2434,8 @@
       nuevaPartida();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
+    $('zoomMas').addEventListener('click', () => fijarZoom(zoomMapa * 1.4));
+    $('zoomMenos').addEventListener('click', () => { if (zoomMapa / 1.4 < 1.05) zoomInicial(); else fijarZoom(zoomMapa / 1.4); });
     // Velocidad: ×1 → ×2 → ×3 → ×1
     $('btnVel').addEventListener('click', () => { G.vel = G.vel >= 3 ? 1 : G.vel + 1; refrescarTodo(); });
     $('btnManual').addEventListener('click', () => abrirManual());
@@ -2463,5 +2521,5 @@
   });
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, W, H, fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();

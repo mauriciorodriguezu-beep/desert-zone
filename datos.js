@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.13',
+  version: '0.14',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -14,8 +14,8 @@ const DATOS = {
   // Campo de 440 x 540 px (11 columnas x 13,5 filas de 40 px). La cuadrícula solo se usa para
   // trazar el camino; las torres se ubican libremente.
   celda: 40,
-  cols: 11,
-  filas: 13.5,
+  cols: 13,                 // campo 20% más grande que en la v0.13 (antes 11 × 13,5)
+  filas: 16,
 
   colocacion: {
     tamTorre: 30,     // lado de la torre; dos torres no pueden montarse
@@ -488,7 +488,7 @@ const DATOS = {
       nombre: 'Zona desértica', dificultad: 'Fácil', tema: 'desierto',
       totalOleadas: 50,                           // la campaña termina en esta oleada, con el jefe final
       enemigosGenerados: ['soldado', 'blindado'],  // tipos que usan las oleadas generadas
-      camino: [[-1, 1], [9, 1], [9, 6], [1, 6], [1, 11], [11, 11]],
+      camino: [[-1, 1], [11, 1], [11, 7], [1, 7], [1, 13], [13, 13]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 6,  cada: 1.2 }],
         /*  2 */ [{ tipo: 'soldado', n: 10, cada: 1.0 }],
@@ -528,7 +528,7 @@ const DATOS = {
       totalOleadas: 50,
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
-      camino: [[-1, 1], [4, 1], [4, 4], [8, 4], [8, 8], [2, 8], [2, 11], [11, 11]],
+      camino: [[-1, 1], [5, 1], [5, 5], [10, 5], [10, 10], [2, 10], [2, 13], [13, 13]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 8,  cada: 1.0 }],
         /*  2 */ [{ tipo: 'soldado', n: 10, cada: 0.9 }],
@@ -570,8 +570,8 @@ const DATOS = {
       // DOS ENTRADAS: una por la izquierda y otra por arriba. Se juntan en la columna 6 y siguen juntas a la base.
       // Los enemigos se reparten por turno entre las dos. Oleadas: las del ártico con 20% más de enemigos.
       caminos: [
-        [[-1, 2], [3, 2], [3, 6], [6, 6], [6, 9], [2, 9], [2, 11], [11, 11]],
-        [[8, -1], [8, 4], [6, 4], [6, 9], [2, 9], [2, 11], [11, 11]]
+        [[-1, 2], [4, 2], [4, 7], [7, 7], [7, 11], [2, 11], [2, 13], [13, 13]],
+        [[10, -1], [10, 5], [7, 5], [7, 11], [2, 11], [2, 13], [13, 13]]
       ],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 10,  cada: 1.0 }],

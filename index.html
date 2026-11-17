@@ -63,6 +63,13 @@
   #btnVel, #btnPausa { width: 46px; }
   #barra button.activo { background: #13233d; border-color: var(--azul); color: var(--azul); }
 
+  /* Zoom del mapa y barra del jefe (en la página, sobre el mapa) */
+  #zoomBtns { position: absolute; right: max(6px, env(safe-area-inset-right, 0px)); top: 42%; z-index: 3; display: flex; flex-direction: column; gap: 6px; }
+  #zoomBtns button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(10,14,26,.62); color: #e8eefc; font-size: 20px; font-weight: 700; line-height: 1; }
+  #barraJefe { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: rgba(20,13,12,.85); pointer-events: none; }
+  #barraJefe b { font-size: 10px; color: #ffd23f; letter-spacing: .05em; }
+  #barraJefe span { display: block; width: 170px; height: 7px; background: #4a1513; border: 1px solid #ffd23f; }
+  #barraJefe i { display: block; height: 100%; width: 100%; background: #e5342a; }
   #mapa { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #0a0e1a; }
   /* Manual del juego: pantalla completa con pestañas y contenido desplazable */
   #manual { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; background: #070a13; }
@@ -216,6 +223,8 @@
   </div>
   <div id="aviso"></div>
   <div id="mapa">
+    <div id="barraJefe" hidden><b>JEFE</b><span><i id="barraJefeVida"></i></span></div>
+    <div id="zoomBtns"><button id="zoomMas" aria-label="Acercar">+</button><button id="zoomMenos" aria-label="Alejar" hidden>−</button></div>
     <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnManual">Manual</button></div>
   </div>
   <section id="panel">
@@ -252,8 +261,8 @@
   </div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.13"></script>
-<script src="juego.js?v=0.13"></script>
+<script src="datos.js?v=0.14"></script>
+<script src="juego.js?v=0.14"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
