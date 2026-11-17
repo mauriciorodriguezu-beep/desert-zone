@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.7',
+  version: '0.8',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -163,6 +163,81 @@ const DATOS = {
           { costo: 220, cadencia: 1.5, salva: 2, nota: 'salva doble' }   // dos misiles por disparo
         ] }
       }
+    },
+    minas: {
+      nombre: 'Torre minadora', corto: 'Minas', costo: 130,
+      desc: 'Siembra minas en el camino dentro de su alcance. Se acumulan aunque no haya enemigos y estallan al paso. Solo tierra.',
+      arma: 'mina', tipoDano: 'explosivo', antiaerea: false,
+      dano: 55, radio: 28, cadencia: 3.0, alcance: 85, maxMinas: 6,   // cadencia = segundos entre mina y mina
+      // BERSERK: siembra "minas" minas de golpe (pueden pasar del máximo), con el daño multiplicado.
+      berserk: { nombre: 'Campo minado', cargaSeg: 15, minas: 8, multDano: 1.5 },
+      atributos: {
+        dano: { nombre: 'Daño', niveles: [
+          { costo: 70,  dano: 75 },
+          { costo: 110, dano: 98 },
+          { costo: 170, dano: 125, aturde: 0.5, nota: 'aturde' }          // detiene 0,5 s a los alcanzados (jefes no)
+        ] },
+        cadencia: { nombre: 'Siembra', niveles: [
+          { costo: 60,  cadencia: 2.5 },
+          { costo: 90,  cadencia: 2.0 },
+          { costo: 140, cadencia: 1.6 }
+        ] },
+        cantidad: { nombre: 'Minas', niveles: [                          // máximo de minas en el camino a la vez
+          { costo: 50,  maxMinas: 9 },
+          { costo: 80,  maxMinas: 12 },
+          { costo: 130, maxMinas: 16, radio: 36, nota: 'más radio' }
+        ] }
+      }
+    },
+    laser: {
+      nombre: 'Torre láser', corto: 'Láser', costo: 220,
+      desc: 'Haz continuo que daña a todo lo que está en su línea. Apunta solo hacia donde atraviesa más enemigos: rinde más en una esquina del camino. Tierra y aire.',
+      arma: 'laser', tipoDano: 'energia', antiaerea: true,
+      danoSeg: 24, alcance: 130, ancho: 9,                               // daño por segundo a cada enemigo dentro del haz; ancho en px
+      // BERSERK: durante "seg" segundos el haz hace "multDano" veces el daño y es "multAncho" veces más ancho.
+      berserk: { nombre: 'Haz total', cargaSeg: 14, seg: 3, multDano: 3, multAncho: 2 },
+      atributos: {
+        potencia: { nombre: 'Potencia', niveles: [
+          { costo: 90,  danoSeg: 31 },
+          { costo: 140, danoSeg: 40 },
+          { costo: 210, danoSeg: 52, perforante: true, nota: 'perfora' }  // ignora la resistencia a la energía
+        ] },
+        alcance: { nombre: 'Alcance', niveles: [
+          { costo: 60,  alcance: 150 },
+          { costo: 90,  alcance: 170 },
+          { costo: 130, alcance: 195 }
+        ] },
+        haz: { nombre: 'Haz', niveles: [
+          { costo: 60,  ancho: 12 },
+          { costo: 90,  ancho: 15 },
+          { costo: 140, ancho: 19 }
+        ] }
+      }
+    },
+    rayo: {
+      nombre: 'Torre de rayos', corto: 'Rayo', costo: 300,
+      desc: 'Descarga que salta de enemigo en enemigo, con algo menos de fuerza en cada salto. Tierra y aire.',
+      arma: 'rayo', tipoDano: 'energia', antiaerea: true,
+      dano: 45, cadencia: 1.5, alcance: 110, saltos: 3, radioSalto: 60, caida: 0.85,   // caida: el daño se multiplica por esto en cada salto
+      // BERSERK: descarga a todos los enemigos dentro de su alcance, con el daño multiplicado, y los aturde (jefes no).
+      berserk: { nombre: 'Tormenta eléctrica', cargaSeg: 15, multDano: 2, aturde: 0.8 },
+      atributos: {
+        dano: { nombre: 'Daño', niveles: [
+          { costo: 90,  dano: 60 },
+          { costo: 140, dano: 80 },
+          { costo: 210, dano: 105, aturde: 0.35, nota: 'electrocuta' }     // detiene 0,35 s a cada tocado (jefes no)
+        ] },
+        saltos: { nombre: 'Saltos', niveles: [
+          { costo: 80,  saltos: 4 },
+          { costo: 120, saltos: 5 },
+          { costo: 180, saltos: 7, radioSalto: 75, nota: 'salto largo' }
+        ] },
+        cadencia: { nombre: 'Cadencia', niveles: [
+          { costo: 80,  cadencia: 1.3 },
+          { costo: 120, cadencia: 1.1 },
+          { costo: 180, cadencia: 0.9 }
+        ] }
+      }
     }
   },
 
@@ -175,7 +250,9 @@ const DATOS = {
          tipo           'area'  la torre "desde" dispara una carga que estalla en un radio sobre su objetivo
                         'linea' las dos torres disparan un rayo que atraviesa a todos los enemigos en línea
                         'onda'  onda desde el punto medio de las dos torres (solo enemigos en tierra)
-         efecto         aspecto: 'hielo', 'plasma' o 'fuego'
+                        'cadena' la torre "desde" lanza una descarga que salta "saltos" veces entre enemigos cercanos
+                        'minas' la torre "desde" (minadora) siembra "minas" minas extra con el daño del combo
+         efecto         aspecto: 'hielo', 'plasma', 'fuego', 'rayo' o 'laser'
          cargaSeg       segundos que tarda en llenarse con una sola vecina. Una torre con varias vecinas
                         reparte su carga: con 2 enlaces cada uno tarda el doble.
          dano           daño base del ataque;  danoPorMejora  daño extra por cada mejora de las dos torres
@@ -211,7 +288,65 @@ const DATOS = {
       combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 8, dano: 90, danoPorMejora: 7, radio: 70, texto: 'explosión muy amplia' } },
     { id: 'ojiva', nombre: 'Ojiva de plasma', entre: ['plasma', 'misiles'], para: 'misiles',
       bono: { stat: 'radio', mult: 1.25 },
-      combo: { tipo: 'area', desde: 'misiles', efecto: 'plasma', cargaSeg: 8, dano: 130, danoPorMejora: 8, radio: 50, texto: 'explosión de plasma' } }
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'plasma', cargaSeg: 8, dano: 130, danoPorMejora: 8, radio: 50, texto: 'explosión de plasma' } },
+
+    // ── Combos de las torres nuevas (minas, láser, rayo) ──
+    { id: 'emboscada', nombre: 'Emboscada', entre: ['minas', 'ametralladora'], para: 'minas',
+      bono: { stat: 'cadencia', mult: 0.85 },
+      combo: { tipo: 'minas', desde: 'minas', efecto: 'fuego', cargaSeg: 7, dano: 50, danoPorMejora: 4, minas: 3, texto: 'siembra 3 minas extra' } },
+    { id: 'minahielo', nombre: 'Minas de hielo', entre: ['minas', 'crio'], para: 'minas',
+      danoALentos: 1.4,
+      combo: { tipo: 'area', desde: 'minas', efecto: 'hielo', cargaSeg: 7, dano: 35, danoPorMejora: 3, radio: 50, congela: 1.2, texto: 'explosión helada en el camino' } },
+    { id: 'minaplasma', nombre: 'Mina de plasma', entre: ['minas', 'plasma'], para: 'minas',
+      bono: { stat: 'dano', mult: 1.15 },
+      combo: { tipo: 'area', desde: 'plasma', efecto: 'plasma', cargaSeg: 7, dano: 120, danoPorMejora: 6, radio: 35, texto: 'descarga de plasma' } },
+    { id: 'detonacion', nombre: 'Detonación en cadena', entre: ['minas', 'misiles'], para: 'minas',
+      bono: { stat: 'radio', mult: 1.2 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 8, dano: 80, danoPorMejora: 6, radio: 65, aturde: 0.5, texto: 'explosión grande que aturde' } },
+    { id: 'campominado', nombre: 'Campo minado', entre: ['minas', 'minas'], para: 'minas',
+      bono: { stat: 'maxMinas', mult: 1.34 },
+      combo: { tipo: 'minas', desde: 'minas', efecto: 'fuego', cargaSeg: 8, dano: 70, danoPorMejora: 5, minas: 5, texto: 'siembra 5 minas extra' } },
+    { id: 'detonador', nombre: 'Haz detonador', entre: ['minas', 'laser'], para: 'minas',
+      bono: { stat: 'dano', mult: 1.1 },
+      combo: { tipo: 'linea', efecto: 'laser', cargaSeg: 7, dano: 60, danoPorMejora: 6, largo: 200, ancho: 12, texto: 'haz que atraviesa' } },
+    { id: 'minaelectrica', nombre: 'Minas eléctricas', entre: ['minas', 'rayo'], para: 'rayo',
+      bono: { stat: 'cadencia', mult: 0.9 },
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 8, dano: 50, danoPorMejora: 4, saltos: 6, aturde: 0.4, texto: 'descarga que salta y aturde' } },
+
+    { id: 'miralaser', nombre: 'Mira láser', entre: ['laser', 'ametralladora'], para: 'ametralladora',
+      bono: { stat: 'alcance', mult: 1.15 },
+      combo: { tipo: 'linea', efecto: 'laser', cargaSeg: 7, dano: 55, danoPorMejora: 6, largo: 220, ancho: 12, texto: 'haz que atraviesa' } },
+    { id: 'hazcrio', nombre: 'Haz criogénico', entre: ['laser', 'crio'], para: 'laser',
+      danoALentos: 1.4,
+      combo: { tipo: 'linea', efecto: 'hielo', cargaSeg: 8, dano: 40, danoPorMejora: 4, largo: 200, ancho: 12, congela: 1.0, texto: 'haz que congela en línea' } },
+    { id: 'laserplasma', nombre: 'Láser de plasma', entre: ['laser', 'plasma'], para: 'laser',
+      bono: { stat: 'danoSeg', mult: 1.15 },
+      combo: { tipo: 'linea', efecto: 'plasma', cargaSeg: 8, dano: 90, danoPorMejora: 7, largo: 220, ancho: 13, texto: 'rayo de plasma que atraviesa' } },
+    { id: 'guialaser', nombre: 'Guía láser', entre: ['laser', 'misiles'], para: 'misiles',
+      bono: { stat: 'cadencia', mult: 0.85 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 8, dano: 90, danoPorMejora: 7, radio: 50, texto: 'misil guiado' } },
+    { id: 'prisma', nombre: 'Prisma', entre: ['laser', 'laser'], para: 'laser',
+      bono: { stat: 'ancho', mult: 1.3 },
+      combo: { tipo: 'linea', efecto: 'laser', cargaSeg: 8, dano: 80, danoPorMejora: 7, largo: 260, ancho: 16, texto: 'haz doble muy largo' } },
+    { id: 'ionizado', nombre: 'Haz ionizado', entre: ['laser', 'rayo'], para: 'rayo',
+      bono: { stat: 'alcance', mult: 1.15 },
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 8, dano: 60, danoPorMejora: 5, saltos: 8, texto: 'descarga de 8 saltos' } },
+
+    { id: 'conductoras', nombre: 'Balas conductoras', entre: ['rayo', 'ametralladora'], para: 'ametralladora',
+      bono: { stat: 'dano', mult: 1.15 },
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 7, dano: 45, danoPorMejora: 4, saltos: 5, texto: 'descarga que salta' } },
+    { id: 'superconductor', nombre: 'Superconductor', entre: ['rayo', 'crio'], para: 'rayo',
+      danoALentos: 1.5,
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'hielo', cargaSeg: 8, dano: 40, danoPorMejora: 4, saltos: 5, congela: 0.8, texto: 'descarga que congela' } },
+    { id: 'arcoplasma', nombre: 'Arco de plasma', entre: ['rayo', 'plasma'], para: 'rayo',
+      bono: { stat: 'dano', mult: 1.15 },
+      combo: { tipo: 'area', desde: 'plasma', efecto: 'rayo', cargaSeg: 8, dano: 130, danoPorMejora: 7, radio: 40, aturde: 0.4, texto: 'golpe eléctrico en área' } },
+    { id: 'emp', nombre: 'Pulso EMP', entre: ['rayo', 'misiles'], para: 'misiles',
+      bono: { stat: 'radio', mult: 1.15 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'rayo', cargaSeg: 8, dano: 60, danoPorMejora: 5, radio: 70, aturde: 0.8, texto: 'explosión que aturde, también a drones' } },
+    { id: 'tormenta', nombre: 'Tormenta', entre: ['rayo', 'rayo'], para: 'rayo',
+      bono: { stat: 'cadencia', mult: 0.85 },
+      combo: { tipo: 'cadena', desde: 'rayo', efecto: 'rayo', cargaSeg: 9, dano: 80, danoPorMejora: 6, saltos: 10, radioSalto: 80, texto: 'descarga de 10 saltos' } }
   ],
 
   /* ENEMIGOS

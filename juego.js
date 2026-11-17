@@ -96,7 +96,7 @@
     cola: [], tOleada: 0,
     cuenta: 0, enCuenta: false,
     pendientes: {},          // enemigos que faltan por resolver en cada oleada
-    torres: [], enemigos: [], efectos: [], proyectiles: [],
+    torres: [], enemigos: [], efectos: [], proyectiles: [], minas: [],
     vel: 1, pausa: false,
     tipoSel: null, puntoSel: null, torreSel: null,
     bajas: 0, t: 0,
@@ -109,7 +109,7 @@
     G.vidas = D.inicio.vidas;
     G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
-    G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = [];
+    G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
     G.bajas = 0; G.t = 0;
     G.guardado.partidas++;
@@ -270,6 +270,7 @@
     if (i < 0) return false;
     G.creditos += valorVenta(t);
     G.torres.splice(i, 1);
+    G.minas = G.minas.filter(m => m.torre !== t);   // sus minas se retiran con ella
     if (G.torreSel === t) G.torreSel = null;
     recalcularSinergias();
     return true;
@@ -437,8 +438,64 @@
   // Ataque especial de un enlace con la carga llena. Devuelve false si no había a quién atacar
   // (en ese caso la carga se conserva). Los combos ignoran las resistencias del enemigo.
   // Hay tres formas, según combo.tipo en datos.js: 'area', 'linea' y 'onda'.
-  const CARTEL = { hielo: ['#e8fbff', '#0d3b55'], plasma: ['#f0e2ff', '#3a1f6b'], fuego: ['#fff3a0', '#5a3200'] };
-  const COLOR_COMBO = { hielo: 0x9fe8ff, plasma: 0xb98bff, fuego: 0xffd23f };
+  const CARTEL = { hielo: ['#e8fbff', '#0d3b55'], plasma: ['#f0e2ff', '#3a1f6b'], fuego: ['#fff3a0', '#5a3200'], rayo: ['#fffbd0', '#3d3a05'], laser: ['#ffe2e2', '#5a0d0d'] };
+  const COLOR_COMBO = { hielo: 0x9fe8ff, plasma: 0xb98bff, fuego: 0xffd23f, rayo: 0xfff07a, laser: 0xff5050 };
+  // Rayo: desde el primer objetivo salta al enemigo más cercano aún no tocado, hasta "saltos" veces
+  function cadena(primero, saltos, radio, aire) {
+    const out = [primero];
+    let ult = primero;
+    for (let i = 0; i < Math.round(saltos); i++) {
+      let mejor = null, md = radio;
+      for (const e of G.enemigos) {
+        if (!e.vivo || out.includes(e) || (e.def.aereo && !aire)) continue;
+        const d = Math.hypot(e.x - ult.x, e.y - ult.y);
+        if (d <= md) { md = d; mejor = e; }
+      }
+      if (!mejor) break;
+      out.push(mejor); ult = mejor;
+    }
+    return out;
+  }
+  function efectoCadena(x, y, lista, color) {
+    for (const e of lista) {
+      G.efectos.push({ k: 'chispa', x1: x, y1: y, x2: e.x, y2: e.y, t: 0, dur: 0.22, color, s: Math.random() * 1000 });
+      x = e.x; y = e.y;
+    }
+  }
+
+  // Minas: puntos del camino dentro del alcance de la torre (se guardan mientras no cambie el alcance)
+  function puntosMinas(t) {
+    if (t.pm && t.pmA === t.s.alcance) return t.pm;
+    const r2 = t.s.alcance * t.s.alcance, out = [];
+    for (let d = 0; d <= LARGO; d += 6) {
+      const p = posEn(d), dx = p.x - t.x, dy = p.y - t.y;
+      if (dx * dx + dy * dy <= r2 && p.x >= 4 && p.x <= W - 4 && p.y >= 4 && p.y <= H - 4) out.push(p);
+    }
+    t.pm = out; t.pmA = t.s.alcance;
+    return out;
+  }
+  // Siembra hasta n minas de la torre t. "extra" (combos y berserk) permite pasar del máximo, hasta el doble.
+  function sembrar(t, n, dano, extra) {
+    const pts = puntosMinas(t);
+    if (!pts.length) return 0;
+    const mias = G.minas.filter(m => m.torre === t);
+    const tope = Math.floor(t.s.maxMinas) * (extra ? 2 : 1);
+    let k = 0;
+    for (; k < n && mias.length < tope; k++) {
+      // De varios puntos al azar, el más alejado de las minas que ya hay: así quedan repartidas
+      let mejor = null, md = -1;
+      for (let i = 0; i < 6; i++) {
+        const p = pts[Math.floor(Math.random() * pts.length)];
+        let dmin = 1e9;
+        for (const m of mias) dmin = Math.min(dmin, Math.hypot(m.x - p.x, m.y - p.y));
+        if (dmin > md) { md = dmin; mejor = p; }
+      }
+      const m = { x: mejor.x + (Math.random() - 0.5) * 8, y: mejor.y + (Math.random() - 0.5) * 8, torre: t, dano, radio: t.s.radio, aturde: t.s.aturde || 0, t0: G.t };
+      G.minas.push(m); mias.push(m);
+    }
+    return k;
+  }
+
   function lanzarCombo(en) {
     const { a, b, sg } = en, c = sg.combo;
     const fuerza = c.dano + c.danoPorMejora * (a.nivel + b.nivel);
@@ -473,6 +530,22 @@
       }
       for (const e of tocados) golpear(e);
       cartel(ox, oy - 22, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
+    } else if (c.tipo === 'cadena') {
+      // La torre de rayos lanza una descarga que salta entre enemigos cercanos
+      const tD = a.tipo === c.desde ? a : b;
+      const obj = elegirObjetivo(tD);
+      if (!obj) return false;
+      const lista = cadena(obj, c.saltos, c.radioSalto || 70, true);
+      for (const e of lista) golpear(e);
+      efectoCadena(tD.x, tD.y, lista, color);
+      tD.ang = Math.atan2(obj.y - tD.y, obj.x - tD.x); tD.tFuego = G.t;
+      cartel(obj.x, obj.y - 22, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
+    } else if (c.tipo === 'minas') {
+      // La minadora siembra minas extra con el daño del combo
+      const tD = a.tipo === c.desde ? a : b;
+      if (!sembrar(tD, c.minas, fuerza, true)) return false;
+      tD.tFuego = G.t;
+      cartel(tD.x, tD.y - 24, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     } else {
       // Onda desde el punto medio de las dos torres (solo enemigos en tierra)
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -507,6 +580,16 @@
         G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.16, h: false });
         danar(e, s.dano * b.multDano, t);
       }
+    } else if (s.arma === 'mina') {
+      sembrar(t, b.minas, s.dano * b.multDano, true);
+    } else if (s.arma === 'laser') {
+      t.bHasta = G.t + b.seg;   // el haz se potencia durante b.seg segundos (ver el disparo del láser)
+    } else if (s.arma === 'rayo') {
+      for (const e of objs) {
+        if (!e.def.jefe) e.aturdido = Math.max(e.aturdido, b.aturde);
+        danar(e, s.dano * b.multDano, t);
+      }
+      for (const e of objs) G.efectos.push({ k: 'chispa', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.3, color: 0xfff07a, s: Math.random() * 1000 });
     } else if (s.arma === 'plasma') {
       const e = elegirObjetivo(t) || objs[0];
       G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * b.multDano, onda: b.onda, critico: true, torre: t, espera: 0 });
@@ -594,11 +677,68 @@
       e.x = p.x; e.y = p.y;
     }
 
+    // Minas: estallan cuando un enemigo de tierra pasa encima y dañan a todos los de tierra en su radio
+    if (G.minas.length) {
+      for (const m of G.minas) {
+        let pisa = false;
+        for (const e of G.enemigos) {
+          if (e.vivo && !e.def.aereo && Math.abs(e.x - m.x) < 11 && Math.abs(e.y - m.y) < 11) { pisa = true; break; }
+        }
+        if (!pisa) continue;
+        m.fin = true;
+        for (const e of G.enemigos) {
+          if (!e.vivo || e.def.aereo || Math.hypot(e.x - m.x, e.y - m.y) > m.radio) continue;
+          if (m.aturde && !e.def.jefe) e.aturdido = Math.max(e.aturdido, m.aturde);
+          danar(e, m.dano, m.torre);
+        }
+        G.efectos.push({ k: 'explosion', x: m.x, y: m.y, t: 0, dur: 0.4, e: m.radio / 22 });
+      }
+      G.minas = G.minas.filter(m => !m.fin);
+    }
+
     // Disparo. Cada torre con arma apunta al objetivo que le toca según su prioridad.
     for (const t of G.torres) {
       const s = t.s;
       if (!s.arma) continue;
       t.enfria -= dt;
+      if (s.arma === 'mina') {
+        // La minadora siembra una mina cada "cadencia" segundos, haya o no enemigos, hasta su máximo
+        t.activa = !!elegirObjetivo(t);
+        if (t.enfria <= 0) {
+          if (sembrar(t, 1, s.dano, false)) { t.tFuego = G.t; t.enfria = s.cadencia; }
+          else t.enfria = 0;
+        }
+        continue;
+      }
+      if (s.arma === 'laser') {
+        // Haz continuo del largo de su alcance: daña a todo lo que esté en la línea.
+        // Apunta hacia donde el haz atraviesa más enemigos (a igualdad, al más avanzado).
+        const furia = t.bHasta > G.t ? D.torres[t.tipo].berserk : null;
+        const ancho = s.ancho * (furia ? furia.multAncho : 1), dps = s.danoSeg * (furia ? furia.multDano : 1);
+        const r2 = s.alcance * s.alcance, cand = [];
+        for (const o of G.enemigos) {
+          if (!o.vivo || (o.def.aereo && !s.antiaerea)) continue;
+          const dx = o.x - t.x, dy = o.y - t.y;
+          if (dx * dx + dy * dy <= r2) cand.push(o);
+        }
+        t.activa = cand.length > 0; t.haz = null;
+        if (!cand.length) continue;
+        let mejorAng = 0, mejorV = -1;
+        for (const o of cand) {
+          const an = Math.atan2(o.y - t.y, o.x - t.x), ex = t.x + Math.cos(an) * s.alcance, ey = t.y + Math.sin(an) * s.alcance;
+          let n = 0;
+          for (const q of cand) if (distSegmento(q.x, q.y, t.x, t.y, ex, ey) <= ancho) n++;
+          const v = n * 1e5 + o.dist / largoDe(o) * 1e4;
+          if (v > mejorV) { mejorV = v; mejorAng = an; }
+        }
+        t.ang = mejorAng;
+        const x2 = t.x + Math.cos(t.ang) * s.alcance, y2 = t.y + Math.sin(t.ang) * s.alcance;
+        t.haz = { x2, y2, ancho, furia: !!furia };
+        for (const o of G.enemigos) {
+          if (o.vivo && !(o.def.aereo && !s.antiaerea) && distSegmento(o.x, o.y, t.x, t.y, x2, y2) <= ancho) danar(o, dps * dt, t);
+        }
+        continue;
+      }
       const e = elegirObjetivo(t);
       t.activa = !!e;
       if (!e) { if (t.enfria < 0) t.enfria = 0; continue; }
@@ -613,6 +753,15 @@
         t.tiros = (t.tiros || 0) + 1;
         const critico = !!s.critCada && t.tiros % s.critCada === 0;
         G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * (critico ? s.critMult : 1), onda: s.onda || 0, critico, torre: t, espera: 0 });
+      } else if (s.arma === 'rayo') {
+        const lista = cadena(e, s.saltos, s.radioSalto, s.antiaerea);
+        let f = 1;
+        for (const o of lista) {
+          if (s.aturde && !o.def.jefe) o.aturdido = Math.max(o.aturdido, s.aturde);
+          danar(o, s.dano * f, t);
+          f *= s.caida;
+        }
+        efectoCadena(t.x, t.y, lista, 0xfff07a);
       } else if (s.arma === 'misil') {
         for (let i = 0; i < (s.salva || 1); i++) {
           G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i ? 1 : -1 });
@@ -718,7 +867,7 @@
     oro: 0xffd23f, sombra: 0x000000,
     plasma: 0x6a4fb0, plasmaOsc: 0x2f2350, plasmaLuz: 0xd2b6ff,
     misil: 0x56646e, misilOsc: 0x2b343b,
-    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9 }
+    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2 }
   };
   const ANCHO_CAMINO = 24;
   let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntrada = null, txtBase = null, TM = null;
@@ -968,6 +1117,46 @@
         g.fillStyle(0xc0392b, alfa).fillCircle(px, py, 1.3);
       }
       if (recien) poli(g, x, y, a, [[-9, -5], [-16, 0], [-9, 5]], 0xffc24a, 0.9);
+    } else if (t.tipo === 'minas') {
+      // Minadora: tambor con escotilla y minas listas alrededor
+      const recien = t.tFuego != null && G.t - t.tFuego < 0.25;
+      g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 9.5);
+      g.fillStyle(0x6d6340, alfa).fillCircle(x, y, 9.5);
+      g.lineStyle(1.2, 0x37311c, alfa).strokeCircle(x, y, 9.5);
+      g.fillStyle(0x4a4329, alfa).fillRect(x - 4.5, y - 4.5, 9, 9);
+      g.lineStyle(1, 0x2a2615, alfa).strokeRect(x - 4.5, y - 4.5, 9, 9);
+      g.fillStyle(recien ? 0xffd23f : 0x2a2615, alfa).fillRect(x - 3, y - 0.8, 6, 1.6);
+      for (let i = 0; i < 3; i++) {
+        const an = i * 2.094 + 0.5, mx = x + Math.cos(an) * 6.8, my = y + Math.sin(an) * 6.8;
+        g.fillStyle(0x2b2a20, alfa).fillCircle(mx, my, 2.4);
+        g.fillStyle(0xc0392b, alfa).fillCircle(mx, my, 0.9);
+      }
+    } else if (t.tipo === 'laser') {
+      // Láser: torreta con cañón largo y lente roja
+      const a = t.ang, cs = Math.cos(a), sn = Math.sin(a), on = !!(t.haz && t.activa);
+      g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 9.5);
+      g.fillStyle(0x3b3236, alfa).fillCircle(x, y, 9.5);
+      g.lineStyle(1, 0x1c1719, alfa).strokeCircle(x, y, 9.5);
+      poli(g, x, y, a, caja(0, -2.2, 16, 4.4), 0x22191c, alfa);
+      poli(g, x, y, a, caja(13, -3, 3, 6), 0x5a2a2a, alfa);
+      poli(g, x, y, a, [[-6, -6], [4, -5], [6, 0], [4, 5], [-6, 6], [-8, 0]], 0x8a2f2f, alfa, 0x3a1414, 1.1);
+      g.fillStyle(on ? 0xffffff : 0xff6b6b, alfa).fillCircle(x, y, on ? 3 : 2.4);
+      g.fillStyle(on ? 0xff3b3b : 0xff8a8a, alfa).fillCircle(x + cs * 16, y + sn * 16, on ? 3.2 : 1.8);
+    } else if (t.tipo === 'rayo') {
+      // Bobina de Tesla: anillos de cobre y esfera que chisporrotea
+      const late = (Math.sin(G.t * 7 + x) + 1) / 2, recien = t.tFuego != null && G.t - t.tFuego < 0.15;
+      g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 10);
+      g.fillStyle(0x33373d, alfa).fillCircle(x, y, 10);
+      g.lineStyle(2.2, 0xb87333, alfa).strokeCircle(x, y, 8);
+      g.lineStyle(2, 0xd08a4a, alfa).strokeCircle(x, y, 5.6);
+      g.fillStyle(0xdfe8ff, alfa).fillCircle(x, y, 3.6);
+      g.fillStyle(0xffffff, alfa).fillCircle(x - 1, y - 1, 1.3);
+      if (recien || (t.activa && late > 0.85)) {
+        for (let i = 0; i < 4; i++) {
+          const an = G.t * 13 + i * 1.57;
+          g.lineStyle(1.3, 0xfff07a, 0.9 * alfa).lineBetween(x, y, x + Math.cos(an) * 11, y + Math.sin(an) * 11);
+        }
+      }
     } else if (!crio) {
       const a = t.ang, doble = t.s && t.s.doble;
       const disparando = t.tFuego != null && G.t - t.tFuego < 0.06;
@@ -1183,6 +1372,15 @@
 
     if (G.torreSel) marcarAlcance(g, G.torreSel.x, G.torreSel.y, G.torreSel.s.alcance, G.torreSel.tipo);
     for (const en of G.enlaces || []) enlace(g, en.a.x, en.a.y, en.b.x, en.b.y, 0.85);
+    // Minas sembradas en el camino
+    for (const m of G.minas || []) {
+      g.fillStyle(0x000000, 0.25).fillCircle(m.x + 1, m.y + 1.5, 4.6);
+      g.fillStyle(0x3b3a2c, 1).fillCircle(m.x, m.y, 4.3);
+      g.lineStyle(1, 0x1c1b14, 1).strokeCircle(m.x, m.y, 4.3);
+      g.fillStyle(0x6d6340, 1).fillCircle(m.x, m.y, 2.2);
+      const parpadeo = Math.sin((G.t - m.t0) * 6) > 0.4;
+      g.fillStyle(parpadeo ? 0xff4a3a : 0x7a2a22, 1).fillCircle(m.x, m.y, 1.1);
+    }
     for (const t of G.torres) dibujarTorre(g, t, 1);
     for (const en of G.enlaces || []) medidorCombo(g, en);
     if (G.torreSel) {
@@ -1192,6 +1390,16 @@
     }
 
     for (const e of G.enemigos) dibujarEnemigo(g, e);
+
+    // Haces de las torres láser
+    for (const t of G.torres) {
+      if (!t.haz || !t.activa) continue;
+      const h = t.haz, parpadeo = 0.85 + 0.15 * Math.sin(G.t * 40 + t.x);
+      const ox = t.x + Math.cos(t.ang) * 16, oy = t.y + Math.sin(t.ang) * 16;
+      g.lineStyle(h.ancho * 1.6, h.furia ? 0xff9a3a : 0xff3b3b, 0.18 * parpadeo).lineBetween(ox, oy, h.x2, h.y2);
+      g.lineStyle(Math.max(2, h.ancho * 0.55), h.furia ? 0xffb35a : 0xff4d4d, 0.65 * parpadeo).lineBetween(ox, oy, h.x2, h.y2);
+      g.lineStyle(h.furia ? 2.4 : 1.4, 0xffffff, 0.9).lineBetween(ox, oy, h.x2, h.y2);
+    }
 
     // Proyectiles en vuelo
     for (const p of G.proyectiles) {
@@ -1216,6 +1424,20 @@
       if (f.k === 'traza') {
         g.lineStyle(f.h ? 3 : 2, f.h ? 0x9fe8ff : 0xfff3a0, 0.9 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
         g.fillStyle(0xffffff, 1 - k).fillCircle(f.x2, f.y2, f.h ? 3.4 : 2.2);
+      } else if (f.k === 'chispa') {
+        // Descarga eléctrica en zigzag
+        const dx = f.x2 - f.x1, dy = f.y2 - f.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+        const pts = [[f.x1, f.y1]];
+        for (let i = 1; i < 5; i++) {
+          const off = Math.sin(f.s + i * 2.7 + f.t * 30) * Math.min(7, L * 0.12);
+          pts.push([f.x1 + dx * i / 5 + nx * off, f.y1 + dy * i / 5 + ny * off]);
+        }
+        pts.push([f.x2, f.y2]);
+        for (let i = 0; i < pts.length - 1; i++) {
+          g.lineStyle(4, f.color, 0.45 * (1 - k)).lineBetween(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+          g.lineStyle(1.4, 0xffffff, 1 - k).lineBetween(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+        }
+        g.fillStyle(0xffffff, 0.9 * (1 - k)).fillCircle(f.x2, f.y2, 2.6);
       } else if (f.k === 'rayo') {
         g.lineStyle(3 + 9 * (1 - k), f.color, 0.6 * (1 - k)).lineBetween(f.x1, f.y1, f.x2, f.y2);
         g.lineStyle(1 + 3 * (1 - k), 0xffffff, 1 - k).lineBetween(f.x1, f.y1, f.x2, f.y2);
@@ -1337,6 +1559,9 @@
     crio: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8d959b" stroke="#5d5a52"/><path d="M5 5l10 10M15 5L5 15" stroke="#5f7f92" stroke-width="2.6"/><circle cx="10" cy="10" r="4.6" fill="#eaf8fd" stroke="#2f86ad" stroke-width="1.4"/><circle cx="10" cy="10" r="2.2" fill="#7fd4f0"/></svg>',
     plasma: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8b879b" stroke="#5d5a52"/><rect x="8" y="1.5" width="4" height="8" fill="#26202f"/><circle cx="10" cy="11" r="5" fill="#6a4fb0" stroke="#2f2350"/><circle cx="10" cy="11" r="2.2" fill="#d2b6ff"/><circle cx="10" cy="2.6" r="1.6" fill="#d2b6ff"/></svg>',
     misiles: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8a9296" stroke="#5d5a52"/><rect x="5" y="5" width="10" height="11" rx="1" fill="#56646e" stroke="#2b343b"/><circle cx="7.8" cy="8" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="12.2" cy="8" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="7.8" cy="12.5" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="12.2" cy="12.5" r="1.6" fill="#c0392b" stroke="#15191c"/></svg>',
+    minas: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8f8a78" stroke="#5d5a52"/><circle cx="10" cy="10" r="5.2" fill="#6d6340" stroke="#37311c"/><rect x="7.6" y="7.6" width="4.8" height="4.8" fill="#4a4329"/><circle cx="4.8" cy="15" r="1.7" fill="#2b2a20"/><circle cx="15.2" cy="15" r="1.7" fill="#2b2a20"/><circle cx="4.8" cy="15" r=".7" fill="#e5342a"/><circle cx="15.2" cy="15" r=".7" fill="#e5342a"/></svg>',
+    laser: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8e8688" stroke="#5d5a52"/><rect x="9" y="1" width="2" height="8" fill="#22191c"/><circle cx="10" cy="11.5" r="4.8" fill="#8a2f2f" stroke="#3a1414"/><circle cx="10" cy="11.5" r="1.8" fill="#ff6b6b"/><circle cx="10" cy="1.8" r="1.4" fill="#ff3b3b"/></svg>',
+    rayo: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#878d94" stroke="#5d5a52"/><circle cx="10" cy="10" r="5.6" fill="#33373d" stroke="#b87333" stroke-width="1.4"/><circle cx="10" cy="10" r="3.4" fill="none" stroke="#d08a4a" stroke-width="1.2"/><circle cx="10" cy="10" r="1.9" fill="#dfe8ff"/><path d="M14.5 3.5l-2 3h2l-2 3" stroke="#fff07a" stroke-width="1" fill="none"/></svg>',
     candado: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#4a6080" stroke-width="1.6"><rect x="5" y="9" width="10" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 016 0V9"/></svg>'
   };
 
@@ -1366,6 +1591,15 @@
       return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) +
         (s.onda ? ' · onda ' + Math.round(s.onda) : '') + (s.critCada ? ' · crítico cada ' + s.critCada + ' tiros' : '');
     }
+    if (tipo === 'minas') {
+      return 'Mina de daño ' + s.dano + ' en radio ' + Math.round(s.radio) + ' · una cada ' + dec(s.cadencia) + ' s · hasta ' + Math.floor(s.maxMinas) + ' minas · alcance ' + Math.round(s.alcance) + (s.aturde ? ' · aturde' : '');
+    }
+    if (tipo === 'laser') {
+      return 'Daño ' + dec(s.danoSeg) + ' por segundo a todo lo que está en el haz · ancho ' + Math.round(s.ancho) + ' · largo ' + Math.round(s.alcance) + (s.perforante ? ' · perforante' : '');
+    }
+    if (tipo === 'rayo') {
+      return 'Daño ' + dec(s.dano) + ' · salta ' + Math.round(s.saltos) + ' veces (−' + Math.round((1 - s.caida) * 100) + '% por salto) · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) + (s.aturde ? ' · electrocuta' : '');
+    }
     if (tipo === 'misiles') {
       return 'Daño ' + s.dano + ' en radio ' + Math.round(s.radio) + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) +
         (s.salva > 1 ? ' · salva doble' : '') + (s.aturde ? ' · aturde' : '');
@@ -1383,7 +1617,11 @@
     onda: s => s.onda ? String(Math.round(s.onda)) : 'no',
     radio: s => String(Math.round(s.radio)),
     frio: s => Math.round(s.lento * 100) + '%',
-    congelacion: s => s.congela ? dec(s.congela) + ' s' : 'no'
+    congelacion: s => s.congela ? dec(s.congela) + ' s' : 'no',
+    cantidad: s => String(Math.floor(s.maxMinas)),
+    potencia: s => dec(s.danoSeg) + '/s',
+    haz: s => Math.round(s.ancho) + ' px',
+    saltos: s => String(Math.round(s.saltos))
   };
   function ponerHtml(el, html) { if (el._h !== html) { el._h = html; el.innerHTML = html; } }
 
@@ -1435,7 +1673,7 @@
         tSin = 'Sin combo: pégale cualquier otra torre para activar uno';
       }
       if (def.berserk) tSin = (t.berserk ? 'Berserk: ' + def.berserk.nombre + ' ' + Math.floor(Math.min(1, t.bCarga) * 100) + '%' : 'Berserk: faltan ' + (maxMejoras(t.tipo) - t.nivel) + ' mejoras') + ' · ' + tSin;
-      vV = true; vP = !!t.s.arma;
+      vV = true; vP = !!t.s.arma && t.s.arma !== 'mina' && t.s.arma !== 'laser';   // minas y láser no eligen objetivo
       poner(bP, 'textContent', 'Objetivo: ' + D.prioridades[t.prioridad]);
       poner(bV, 'textContent', 'Vender +' + valorVenta(t) + 'cr');
     } else if (G.tipoSel) {
@@ -1593,6 +1831,9 @@
     const que = tipo === 'crio' ? 'hace ' + b.dano + ' de daño y congela ' + dec(b.congela) + ' s a todos los enemigos de tierra dentro de su alcance'
       : def.arma === 'bala' ? 'ráfaga de ' + b.balas + ' disparos repartidos entre los enemigos a tiro, cada uno con daño ×' + dec(b.multDano)
       : def.arma === 'plasma' ? 'un disparo con daño ×' + dec(b.multDano) + ' y onda expansiva de ' + b.onda + ' px'
+      : def.arma === 'mina' ? 'siembra ' + b.minas + ' minas de golpe con daño ×' + dec(b.multDano) + ', aunque pase de su máximo'
+      : def.arma === 'laser' ? 'durante ' + b.seg + ' s el haz hace ' + dec(b.multDano) + ' veces el daño y es ' + dec(b.multAncho) + ' veces más ancho'
+      : def.arma === 'rayo' ? 'descarga sobre todos los enemigos dentro de su alcance con daño ×' + dec(b.multDano) + ' y los aturde ' + dec(b.aturde) + ' s (jefes no)'
       : b.misiles + ' misiles a la vez repartidos entre los enemigos a tiro, con daño ×' + dec(b.multDano);
     return '<b>' + b.nombre + ':</b> ' + que + '. Cada ' + b.cargaSeg + ' s.';
   }
@@ -1626,7 +1867,7 @@
     if (sg.bono) {
       const b = sg.bono;
       if (b.stat === 'cadencia') return quien + ': dispara ' + pct(1 - b.mult) + ' más rápido.';
-      const que = { alcance: 'de alcance', dano: 'de daño', radio: 'de radio de explosión' }[b.stat] || 'de ' + b.stat;
+      const que = { alcance: 'de alcance', dano: 'de daño', radio: 'de radio de explosión', danoSeg: 'de daño del haz', ancho: 'de ancho del haz', maxMinas: 'de minas en el camino' }[b.stat] || 'de ' + b.stat;
       return quien + ': +' + pct(b.mult - 1) + ' ' + que + '.';
     }
     return 'Sin bono permanente.';
@@ -1635,6 +1876,8 @@
     const c = sg.combo;
     let t = c.tipo === 'area' ? 'La ' + D.torres[c.desde].nombre.toLowerCase() + ' lanza una carga que estalla en un radio de ' + c.radio + ' sobre su objetivo'
       : c.tipo === 'linea' ? 'Las dos torres disparan un rayo que atraviesa a todos los enemigos en su línea'
+      : c.tipo === 'cadena' ? 'La torre de rayos lanza una descarga que salta ' + c.saltos + ' veces entre enemigos cercanos, sin perder fuerza'
+      : c.tipo === 'minas' ? 'La minadora siembra ' + c.minas + ' minas extra (puede pasar de su máximo)'
       : 'Onda de radio ' + c.radio + ' alrededor de las dos torres (solo enemigos en tierra)';
     t += ': ' + c.dano + ' de daño, más ' + c.danoPorMejora + ' por cada mejora de las dos torres.';
     if (c.congela) t += ' Congela ' + dec(c.congela) + ' s.';
