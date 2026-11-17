@@ -116,11 +116,12 @@
   }
   #pausa span { font-size: 13px; font-weight: 700; color: var(--texto); margin-right: 4px; text-shadow: 0 1px 2px #000; }
   #pausa button {
-    pointer-events: auto; height: 40px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 700;
+    pointer-events: auto; height: 40px; padding: 0 10px; border-radius: 9px; font-size: 12.5px; font-weight: 700; line-height: 1.1; max-width: 26%;
     border: 1px solid #1f6a44; background: #10301f; color: #8fe0b6;
   }
   #pausa #btnManual { border-color: var(--linea); background: #111a2c; color: var(--texto); }
   #pausa #btnReiniciar { border-color: #6a3a0a; background: #2a1a0a; color: #e0a060; }
+  #pausa #btnInicio.confirmar { border-color: #b3261e; background: #5a1410; color: #ffd9d4; }
   #pausa #btnReiniciar.confirmar { border-color: #b3261e; background: #5a1410; color: #ffd9d4; }
   #pausa button:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
   #aviso {
@@ -241,7 +242,7 @@
   <div id="mapa">
     <div id="barraJefe" hidden><b id="barraJefeNombre">JEFE</b><span><i id="barraJefeVida"></i></span></div>
     <div id="zoomBtns"><button id="zoomMas" aria-label="Acercar">+</button><button id="zoomMenos" aria-label="Alejar" hidden>−</button></div>
-    <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnManual">Manual</button></div>
+    <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnInicio">⌂ Inicio</button><button id="btnManual">Manual</button></div>
   </div>
   <section id="panel">
     <div id="torres"></div>
@@ -280,8 +281,8 @@
   <div id="historia" hidden><h1 id="historiaNombre">LAST HOPE</h1><div class="hEtiqueta">TRANSMISIÓN DE LA RESISTENCIA</div><p id="historiaTexto"></p><div id="historiaPuntos"></div><div class="hBotones"><button id="historiaSaltar">Saltar</button><button id="historiaSig">Siguiente</button></div></div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.15.2"></script>
-<script src="juego.js?v=0.15.2"></script>
+<script src="datos.js?v=0.15.3"></script>
+<script src="juego.js?v=0.15.3"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {

@@ -2448,7 +2448,7 @@
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
       '<h3>Zoom</h3><p>Pellizca el mapa con dos dedos (o usa la rueda del mouse, o los botones <b>+</b> y <b>−</b> a la derecha) para acercarte. Con zoom, arrastra un dedo para moverte por el mapa. Al construir o mover una torre, arrastrar acomoda la torre y no el mapa.</p>' +
-      '<h3>Controles</h3><p><b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
+      '<h3>Controles</h3><p>En pausa, <b>⌂ Inicio</b> vuelve a la pantalla de inicio; la partida queda guardada desde la última oleada limpiada y se retoma con <b>Continuar</b>. <b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
   }
 
   function textoBerserk(tipo) {
@@ -2576,7 +2576,27 @@
   }
 
   let reinicioArmado = false, tReinicio = 0;
+  // Volver a la pantalla de inicio desde la pausa (con confirmación de dos toques, como Reiniciar)
+  let inicioArmado = false, tInicio = null;
+  function desarmarInicio() {
+    if (!inicioArmado) return;
+    inicioArmado = false;
+    clearTimeout(tInicio);
+    $('btnInicio').textContent = '⌂ Inicio';
+    $('btnInicio').classList.remove('confirmar');
+  }
+  function volverAlInicio() {
+    // Si el campo está limpio se guarda tal cual; si no, "Continuar" retoma desde la última oleada limpiada
+    if (G.oleada > 0 && enJuego() === 0) guardarPartida();
+    G.fase = 'menu'; G.pausa = false;
+    G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
+    limpiarFlotantes();
+    mostrarMenu();
+    refrescarTodo();
+  }
+
   function desarmarReinicio() {
+    desarmarInicio();
     if (!reinicioArmado) return;
     reinicioArmado = false;
     clearTimeout(tReinicio);
@@ -2617,6 +2637,19 @@
     for (const b of $('manualTabs').children) b.addEventListener('click', () => { manualTab = b.dataset.tab; pintarManual(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
     // Reiniciar pide un segundo toque para no perder la partida por error
+    $('btnInicio').addEventListener('click', () => {
+      if (G.fase !== 'jugando') return;
+      if (!inicioArmado) {
+        inicioArmado = true;
+        $('btnInicio').textContent = '¿Salir? Toca otra vez';
+        $('btnInicio').classList.add('confirmar');
+        clearTimeout(tInicio);
+        tInicio = setTimeout(desarmarInicio, 3500);
+      } else {
+        desarmarInicio();
+        volverAlInicio();
+      }
+    });
     $('btnReiniciar').addEventListener('click', () => {
       if (G.fase !== 'jugando') return;
       if (!reinicioArmado) {
