@@ -80,6 +80,9 @@
   #manualCuerpo b { color: var(--texto); }
   #manualCuerpo .mnota { color: var(--tenue); font-size: 13px; margin-top: 12px; }
   .mcard { background: var(--caja); border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .mcard.combo { border-color: #c04a9a; } .mcard .mdato svg { vertical-align: middle; }
+  #torres .torre.bloq { opacity: .6; } #torres .torre.bloq .tc { color: var(--tenue); }
+  #torres .torre.cambio { border-color: #7a2a62; background: #1d1022; }
   .mcard.hielo { border-color: #2f86ad; } .mcard.plasma { border-color: #6a4fb0; } .mcard.fuego { border-color: #8a6a1a; } .mcard.rayo { border-color: #b8a43a; } .mcard.laser { border-color: #a83232; }
   .mcard p { font-size: 13px; }
   .mcard ul { font-size: 13px; }
@@ -230,7 +233,7 @@
   </section>
   <div id="manual" hidden>
     <div id="manualCab"><b>Manual del juego</b><button id="manualCerrar" aria-label="Cerrar manual">✕</button></div>
-    <div id="manualTabs"><button data-tab="jugar">Jugar</button><button data-tab="torres">Torres</button><button data-tab="combos">Combos</button><button data-tab="trios">Tríos</button><button data-tab="enemigos">Enemigos</button></div>
+    <div id="manualTabs"><button data-tab="jugar">Jugar</button><button data-tab="torres">Torres</button><button data-tab="combos">Combos</button><button data-tab="trios">Fusión</button><button data-tab="enemigos">Enemigos</button></div>
     <div id="manualCuerpo"></div>
   </div>
   <div id="velo">
@@ -245,8 +248,8 @@
   </div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.10"></script>
-<script src="juego.js?v=0.10"></script>
+<script src="datos.js?v=0.11"></script>
+<script src="juego.js?v=0.11"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {

@@ -19,6 +19,20 @@
   const cr = n => Math.floor(n).toLocaleString('es-CL');
   const dec = n => String(Math.round(n * 100) / 100).replace('.', ',');
 
+  // Torres combo: su precio es factorPrecio × lo que valen las tres torres de su receta con todas sus mejoras
+  const valorMax = tipo => {
+    const d = D.torres[tipo];
+    let v = d.costo;
+    for (const id in d.atributos) for (const n of d.atributos[id].niveles) v += n.costo;
+    return v;
+  };
+  for (const f of D.fusiones || []) {
+    const d = D.torres[f.torre];
+    d.receta = f.entre;
+    d.costo = Math.round(D.fusion.factorPrecio * f.entre.reduce((s, x) => s + valorMax(x), 0) / 10) * 10;
+    f.nombre = d.nombre;
+  }
+
   // Escenario en juego. cargarMapa() lo cambia: recalcula el camino y repinta el fondo.
   let mapaId = null, MAPA = null, TOTAL_OLEADAS = 0;
   // Modo de juego: 'campana' (número fijo de oleadas, con jefe final) o 'infinito' (hasta perder)
@@ -85,7 +99,7 @@
   // Guardado entre partidas (queda en el teléfono / navegador)
   const CLAVE = 'td_guardado_v1';
   function cargarGuardado() {
-    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0, completados: {}, mejor: {}, mapa: null, modo: 'campana', recordInfinito: {} };
+    const base = { bajasTotales: 0, victorias: 0, mejorVidas: 0, partidas: 0, completados: {}, mejor: {}, mapa: null, modo: 'campana', recordInfinito: {}, desbloqueadas: {} };
     let g = base;
     try { g = Object.assign(base, JSON.parse(localStorage.getItem(CLAVE) || '{}')); } catch (e) { /* sin guardado */ }
     // Quien ganó antes de que existieran varios escenarios tiene completado el primero
@@ -129,7 +143,7 @@
   }
 
   // ───────────────────────── 3. REGLAS ─────────────────────────
-  const NO_STAT = { atributos: 1, nombre: 1, corto: 1, costo: 1, desc: 1, nota: 1 };
+  const NO_STAT = { atributos: 1, nombre: 1, corto: 1, costo: 1, desc: 1, nota: 1, combo: 1, receta: 1 };
 
   // Valores de una torre: base + los niveles comprados de cada atributo. niv = { atributo: nivel }
   function statsDe(tipo, niv) {
@@ -221,7 +235,7 @@
         }
       }
     }
-    // Tríos: tres torres pegadas entre sí (en triángulo) cuyos tipos coinciden con un combo de 3
+    // Tríos: tres torres pegadas entre sí (en triángulo) cuyos tipos son la receta de una torre combo
     const n = G.torres.length;
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
       const a = G.torres[i], b = G.torres[j];
@@ -237,11 +251,40 @@
     }
     for (const t of G.torres) calcular(t);   // los bonos dependen de las vecinas
   }
-  // Combos de 3 cuyo trío de tipos es este (sin importar el orden)
+  // Fusiones cuya receta es este trío de tipos (sin importar el orden)
   const firma = tipos => tipos.slice().sort().join('+');
   function trioDe(ta, tb, tc) {
     const f = firma([ta, tb, tc]);
-    return (D.trios || []).filter(sg => firma(sg.entre) === f);
+    return (D.fusiones || []).filter(sg => firma(sg.entre) === f);
+  }
+  // Una torre combo está desbloqueada si ya se fusionó alguna vez (o si datos.js abre todo para pruebas)
+  const desbloqueada = tipo => !!(D.desbloquearTodo || (G.guardado.desbloqueadas || {})[tipo]);
+  // El trío está listo para fusionar cuando las tres torres tienen todas sus mejoras
+  const listoFusion = en => en.torres.every(t => t.nivel >= maxMejoras(t.tipo));
+  function fusionar(en) {
+    const f = en.sg, def = D.torres[f.torre];
+    if (!en.trio || !listoFusion(en) || G.creditos < def.costo || en.torres.some(t => !G.torres.includes(t))) return false;
+    G.creditos -= def.costo;
+    const x = Math.round(en.torres.reduce((s, t) => s + t.x, 0) / 3), y = Math.round(en.torres.reduce((s, t) => s + t.y, 0) / 3);
+    for (const t of en.torres) {
+      G.torres.splice(G.torres.indexOf(t), 1);
+      G.minas = G.minas.filter(m => m.torre !== t);
+    }
+    const nueva = { tipo: f.torre, x, y, niv: {}, nivel: 0, invertido: def.costo, prioridad: 'primero', enfria: 0, ang: -Math.PI / 2, tCong: 0, sin: [] };
+    calcular(nueva);
+    G.torres.push(nueva);
+    recalcularSinergias();
+    G.torreSel = nueva;
+    G.efectos.push({ k: 'estallido', x, y, r: 46, t: 0, dur: 0.8, color: 0xff7ad9 });
+    cartel(x, y - 28, def.nombre, '#ffe0f6', '#5a0d48');
+    if (!(G.guardado.desbloqueadas || {})[f.torre]) {
+      G.guardado.desbloqueadas = G.guardado.desbloqueadas || {};
+      G.guardado.desbloqueadas[f.torre] = true;
+      guardar();
+      aviso(def.nombre + ' desbloqueada: en las próximas partidas puedes construirla directo (★)');
+      armarBotonesTorre();
+    }
+    return true;
   }
 
   // Qué combos se activarían si se construye "tipo" en el punto (x, y)
@@ -252,7 +295,7 @@
       for (const sg of sinergiaDe(tipo, t.tipo)) nombres.add(sg.nombre + ' (' + sg.combo.texto + ')');
       for (const u of G.torres) {
         if (u === t || !contiguas({ x, y }, u) || !contiguas(t, u)) continue;
-        for (const sg of trioDe(tipo, t.tipo, u.tipo)) nombres.add('TRÍO ' + sg.nombre + ' (' + sg.combo.texto + ')');
+        for (const sg of trioDe(tipo, t.tipo, u.tipo)) nombres.add('trío para fusionar en ' + sg.nombre);
       }
     }
     return [...nombres];
@@ -262,6 +305,7 @@
     const def = D.torres[tipo];
     x = Math.round(x); y = Math.round(y);
     if (!def || !puedeConstruir(x, y) || G.creditos < def.costo) return null;
+    if (def.combo && !desbloqueada(tipo)) return null;
     G.creditos -= def.costo;
     const t = {
       tipo, x, y,
@@ -271,8 +315,10 @@
     calcular(t);
     G.torres.push(t);
     recalcularSinergias();
-    const nuevos = G.enlaces.filter(en => en.torres.includes(t));
-    if (nuevos.length) aviso('Combo activo: ' + [...new Set(nuevos.map(en => en.sg.nombre))].join(' + '));
+    const nuevos = G.enlaces.filter(en => en.torres.includes(t) && !en.trio);
+    const trios = G.enlaces.filter(en => en.torres.includes(t) && en.trio);
+    if (trios.length) aviso('Trío armado: mejora las tres al máximo para fusionarlas en ' + trios[0].sg.nombre);
+    else if (nuevos.length) aviso('Combo activo: ' + [...new Set(nuevos.map(en => en.sg.nombre))].join(' + '));
     return t;
   }
 
@@ -289,6 +335,9 @@
     t.niv[id] = (t.niv[id] || 0) + 1;
     const antes = t.berserk;
     calcular(t);
+    for (const en of G.enlaces) {
+      if (en.trio && en.torres.includes(t) && listoFusion(en)) { aviso('¡Fusión disponible: ' + en.sg.nombre + '! Toca una de las tres torres'); break; }
+    }
     if (t.berserk && !antes) { t.bCarga = 0; t.tBerserk = G.t; aviso('¡Modo berserk! ' + D.torres[t.tipo].nombre + ': ' + D.torres[t.tipo].berserk.nombre); }
     return true;
   }
@@ -644,6 +693,17 @@
     return true;
   }
 
+  // Los n enemigos a tiro más cerca de la base, sin contar a "salvo"
+  function otrosObjetivos(t, salvo, n) {
+    const s = t.s, r2 = s.alcance * s.alcance, out = [];
+    for (const e of G.enemigos) {
+      if (!e.vivo || e === salvo || (e.def.aereo && !s.antiaerea)) continue;
+      const dx = e.x - t.x, dy = e.y - t.y;
+      if (dx * dx + dy * dy <= r2) out.push(e);
+    }
+    return out.sort((p, q) => (largoDe(p) - p.dist) - (largoDe(q) - q.dist)).slice(0, n);
+  }
+
   function elegirObjetivo(t) {
     const s = t.s, r2 = s.alcance * s.alcance;
     let mejor = null, mv = -Infinity;
@@ -675,7 +735,7 @@
     // Efectos de las torres criogénicas (se recalculan en cada paso)
     for (const e of G.enemigos) { e.lento = 0; e.fragil = 0; if (e.congelado > 0) e.congelado -= dt; if (e.aturdido > 0) e.aturdido -= dt; }
     for (const t of G.torres) {
-      if (t.tipo !== 'crio') continue;
+      if (t.tipo !== 'crio' && !t.s.lento) continue;   // la crío y las torres con aura de frío (cañón glacial)
       const s = t.s, r2 = s.alcance * s.alcance;
       let enRango = 0;
       for (const e of G.enemigos) {
@@ -688,7 +748,7 @@
         if (s.fragil && s.fragil > e.fragil) e.fragil = s.fragil;
       }
       t.activa = enRango > 0;
-      if (s.congela) {
+      if (s.congela && s.cadaSeg) {
         t.tCong += dt;
         if (t.tCong >= s.cadaSeg && enRango > 0) {
           t.tCong = 0;
@@ -777,6 +837,17 @@
         for (const o of G.enemigos) {
           if (o.vivo && !(o.def.aereo && !s.antiaerea) && distSegmento(o.x, o.y, t.x, t.y, x2, y2) <= ancho) danar(o, dps * dt, t);
         }
+        if (s.arcoCada) {
+          // Reactor de fusión: cada arcoCada s, un arco eléctrico que salta entre enemigos
+          t.tArco = (t.tArco || 0) + dt;
+          const vivos = cand.filter(o => o.vivo);
+          if (t.tArco >= s.arcoCada && vivos.length) {
+            t.tArco = 0;
+            const lista = cadena(vivos[0], s.arcoSaltos, 75, true);
+            for (const o of lista) danar(o, s.arcoDano, t);
+            efectoCadena(t.x, t.y, lista, 0xff7ad9);
+          }
+        }
         continue;
       }
       const e = elegirObjetivo(t);
@@ -786,13 +857,16 @@
       if (t.enfria > 0) continue;
       t.tFuego = G.t;
       if (s.arma === 'bala') {
-        // Impacto inmediato
-        G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07, h: (e.lento > 0 || e.congelado > 0) && bonoALentos(t) > 1 });
-        danar(e, s.dano, t);
+        // Impacto inmediato (el cañón rotativo reparte el disparo entre varios objetivos)
+        const objs = s.objetivos > 1 ? [e, ...otrosObjetivos(t, e, s.objetivos - 1)] : [e];
+        for (const o of objs) {
+          G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: o.x, y2: o.y, t: 0, dur: 0.07, h: (o.lento > 0 || o.congelado > 0) && bonoALentos(t) > 1 });
+          danar(o, s.dano, t);
+        }
       } else if (s.arma === 'plasma') {
         t.tiros = (t.tiros || 0) + 1;
         const critico = !!s.critCada && t.tiros % s.critCada === 0;
-        G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * (critico ? s.critMult : 1), onda: s.onda || 0, critico, torre: t, espera: 0 });
+        G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * (critico ? s.critMult : 1), onda: s.onda || 0, critico, torre: t, espera: 0, congela: s.congelaImpacto || 0 });
       } else if (s.arma === 'rayo') {
         const lista = cadena(e, s.saltos, s.radioSalto, s.antiaerea);
         let f = 1;
@@ -804,7 +878,8 @@
         efectoCadena(t.x, t.y, lista, 0xfff07a);
       } else if (s.arma === 'misil') {
         for (let i = 0; i < (s.salva || 1); i++) {
-          G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i ? 1 : -1 });
+          const o = i === 0 || !(s.salva > 2) ? e : (otrosObjetivos(t, e, s.salva - 1)[i - 1] || e);   // salvas grandes reparten objetivos
+          G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: o.x, ty: o.y, obj: o, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i % 2 ? 1 : -1, multAire: s.multAire || 1, saltos: s.saltosImpacto || 0 });
         }
       }
       t.enfria += s.cadencia;
@@ -827,14 +902,31 @@
             if (e.vivo && e !== p.obj && !e.def.aereo && Math.hypot(e.x - p.x, e.y - p.y) <= p.onda) danar(e, p.dano * 0.5, p.torre);
           }
         }
+        if (p.congela) {
+          // Plasma helado: congela todo lo que está en la onda (jefes no)
+          for (const e of G.enemigos) {
+            if (e.vivo && !e.def.aereo && !e.def.noCongela && Math.hypot(e.x - p.x, e.y - p.y) <= Math.max(14, p.onda)) e.congelado = Math.max(e.congelado, p.congela);
+          }
+          G.efectos.push({ k: 'hielo', x: p.x, y: p.y, r: Math.max(14, p.onda), t: 0, dur: 0.45 });
+        }
         if (vivo || p.onda > 0) G.efectos.push({ k: 'estallido', x: p.x, y: p.y, r: Math.max(10, p.onda) * (p.critico ? 1.3 : 1), t: 0, dur: 0.28, color: 0xb98bff });
       } else {
         for (const e of G.enemigos) {
           if (!e.vivo || Math.hypot(e.x - p.x, e.y - p.y) > p.radio) continue;
           if (p.aturde && !e.def.jefe) e.aturdido = Math.max(e.aturdido, p.aturde);
-          danar(e, p.dano, p.torre);
+          danar(e, p.dano * (e.def.aereo ? (p.multAire || 1) : 1), p.torre);
         }
         G.efectos.push({ k: 'explosion', x: p.x, y: p.y, t: 0, dur: 0.4, e: p.radio / 20 });
+        if (p.saltos) {
+          // Domo antiaéreo: al estallar descarga un rayo que salta desde el enemigo más cercano
+          let primero = null, md = p.radio + 30;
+          for (const e of G.enemigos) { const dd = Math.hypot(e.x - p.x, e.y - p.y); if (e.vivo && dd < md) { md = dd; primero = e; } }
+          if (primero) {
+            const lista = cadena(primero, p.saltos, 70, true);
+            for (const e of lista) danar(e, p.dano * 0.5, p.torre);
+            efectoCadena(p.x, p.y, lista, 0xfff07a);
+          }
+        }
       }
     }
     G.proyectiles = G.proyectiles.filter(p => !p.fin);
@@ -842,7 +934,7 @@
     // Combos: cada enlace carga mientras alguna de sus dos torres está trabajando.
     // Una torre con varias vecinas reparte su carga: cada enlace carga más lento.
     for (const en of G.enlaces) {
-      if (!en.torres.some(trabajando)) continue;
+      if (en.trio || !en.torres.some(trabajando)) continue;   // los tríos no atacan: son la receta de una fusión
       // Los tríos no reparten carga; los combos de 2 sí (una torre con varias vecinas carga cada uno más lento)
       en.carga += dt / (en.sg.combo.cargaSeg * (en.trio ? 1 : Math.max(en.a.nEnl, en.b.nEnl)));
       if (en.carga >= 1) {
@@ -908,7 +1000,7 @@
     oro: 0xffd23f, sombra: 0x000000,
     plasma: 0x6a4fb0, plasmaOsc: 0x2f2350, plasmaLuz: 0xd2b6ff,
     misil: 0x56646e, misilOsc: 0x2b343b,
-    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2 }
+    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2, rotativo: 0xffffff, glacial: 0xdff6ff, domo: 0xffe9c9, reactor: 0xffd9f3 }
   };
   const ANCHO_CAMINO = 24;
   let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
@@ -1154,10 +1246,12 @@
     }
   }
 
-  // Medidor del trío: triángulo al centro de las tres torres, con su anillo de carga en magenta
+  // Medidor del trío: triángulo al centro de las tres torres. El anillo magenta muestra cuántas mejoras
+  // llevan las tres; lleno y blanco (latiendo) = listas para fusionar.
   function medidorTrio(g, en) {
     const ts = en.torres, mx = (ts[0].x + ts[1].x + ts[2].x) / 3, my = (ts[0].y + ts[1].y + ts[2].y) / 3;
-    const k = Math.min(1, en.carga), hace = G.t - en.tDisparo;
+    const tope = ts.reduce((s, t) => s + maxMejoras(t.tipo), 0) || 1;
+    const k = Math.min(1, ts.reduce((s, t) => s + t.nivel, 0) / tope), hace = k >= 1 ? (G.t % 1.2) : 9;
     g.fillStyle(0x2a0f24, 0.92).fillCircle(mx, my, 9);
     g.lineStyle(1, 0x000000, 0.5).strokeCircle(mx, my, 9);
     g.fillStyle(k >= 1 ? 0xffffff : 0xff7ad9, 0.95).fillTriangle(mx, my - 4.2, mx - 3.8, my + 2.6, mx + 3.8, my + 2.6);
@@ -1173,7 +1267,55 @@
     }
   }
 
+  // Torres combo: losa grande oscura con borde dorado y su torreta propia
+  function dibujarTorreCombo(g, t, alfa) {
+    const x = t.x, y = t.y, a = t.ang, cs = Math.cos(a), sn = Math.sin(a), late = (Math.sin(G.t * 5 + x) + 1) / 2;
+    const recien = t.tFuego != null && G.t - t.tFuego < 0.1;
+    g.fillStyle(COL.sombra, 0.3 * alfa).fillRoundedRect(x - 15, y - 14, 36, 36, 6);
+    g.fillStyle(0x3d4048, alfa).fillRoundedRect(x - 18, y - 18, 36, 36, 6);
+    g.lineStyle(2, COL.oro, alfa).strokeRoundedRect(x - 18, y - 18, 36, 36, 6);
+    g.lineStyle(1, 0xff7ad9, 0.7 * alfa).strokeRoundedRect(x - 15.5, y - 15.5, 31, 31, 5);
+    if (t.tipo === 'rotativo') {
+      g.fillStyle(0x2b2e30, alfa).fillCircle(x, y, 11);
+      g.fillStyle(0x6b7a3e, alfa).fillCircle(x, y, 9);
+      const giro = G.t * (t.activa ? 30 : 2);
+      for (let i = 0; i < 6; i++) {
+        const o = Math.sin(giro + i * 1.047) * 3.6;
+        poli(g, x, y, a, caja(4, o - 0.9, 15, 1.8), 0x1a1c1e, alfa);
+      }
+      poli(g, x, y, a, caja(16, -4.6, 3, 9.2), 0x2b2e30, alfa);
+      g.fillStyle(0x39421f, alfa).fillCircle(x, y, 4.5);
+      if (recien) g.fillStyle(0xfff3a0, 0.95).fillCircle(x + cs * 21, y + sn * 21, 3.4);
+    } else if (t.tipo === 'glacial') {
+      g.lineStyle(3, COL.crioAzul, alfa).strokeCircle(x, y, 12);
+      g.fillStyle(0x3a3350, alfa).fillCircle(x, y, 10.5);
+      poli(g, x, y, a, caja(5, -3.4, 13, 6.8), 0x26202f, alfa);
+      poli(g, x, y, a, caja(16, -4.6, 3, 9.2), COL.crioLuz, alfa);
+      g.fillStyle(0xeaf8fd, alfa).fillCircle(x, y, 5 + late);
+      g.fillStyle(COL.plasmaLuz, alfa).fillCircle(x, y, 2.6);
+    } else if (t.tipo === 'domo') {
+      g.fillStyle(0x56646e, alfa).fillCircle(x, y, 12);
+      g.lineStyle(1.5, 0x2b343b, alfa).strokeCircle(x, y, 12);
+      for (let i = 0; i < 4; i++) {
+        const an = a + i * Math.PI / 2 + Math.PI / 4, px = x + Math.cos(an) * 6.5, py = y + Math.sin(an) * 6.5;
+        g.fillStyle(0x15191c, alfa).fillCircle(px, py, 2.8);
+        g.fillStyle(0xc0392b, alfa).fillCircle(px, py, 1.5);
+      }
+      g.lineStyle(1.6, 0xb87333, alfa).strokeCircle(x, y, 3.5);
+      g.fillStyle(0xdfe8ff, alfa).fillCircle(x, y, 1.8);
+    } else {
+      // Reactor: núcleo que late, anillo de cobre y emisor
+      g.lineStyle(2.4, 0xb87333, alfa).strokeCircle(x, y, 12);
+      g.fillStyle(0x2a0f24, alfa).fillCircle(x, y, 10.5);
+      poli(g, x, y, a, caja(4, -2.6, 15, 5.2), 0x22191c, alfa);
+      g.fillStyle(0xff7ad9, (0.55 + 0.4 * late) * alfa).fillCircle(x, y, 7);
+      g.fillStyle(0xffffff, alfa).fillCircle(x, y, 3 + late);
+      g.fillStyle(0xff3b3b, alfa).fillCircle(x + cs * 18, y + sn * 18, 2.6);
+    }
+  }
+
   function dibujarTorre(g, t, alfa) {
+    if (D.torres[t.tipo].combo) return dibujarTorreCombo(g, t, alfa);
     const x = t.x, y = t.y, crio = t.tipo === 'crio';
     // Losa de hormigón con pernos
     g.fillStyle(COL.sombra, 0.25 * alfa).fillRoundedRect(x - 13, y - 12, 31, 31, 5);
@@ -1436,7 +1578,7 @@
 
     // Zonas de frío activas
     for (const t of G.torres) {
-      if (t.tipo === 'crio' && t.activa) {
+      if (t.s && t.s.lento && t.activa) {
         g.fillStyle(COL.hielo, 0.22).fillCircle(t.x, t.y, t.s.alcance);
         g.lineStyle(1, 0xffffff, 0.5).strokeCircle(t.x, t.y, t.s.alcance);
       }
@@ -1657,28 +1799,48 @@
     minas: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8f8a78" stroke="#5d5a52"/><circle cx="10" cy="10" r="5.2" fill="#6d6340" stroke="#37311c"/><rect x="7.6" y="7.6" width="4.8" height="4.8" fill="#4a4329"/><circle cx="4.8" cy="15" r="1.7" fill="#2b2a20"/><circle cx="15.2" cy="15" r="1.7" fill="#2b2a20"/><circle cx="4.8" cy="15" r=".7" fill="#e5342a"/><circle cx="15.2" cy="15" r=".7" fill="#e5342a"/></svg>',
     laser: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8e8688" stroke="#5d5a52"/><rect x="9" y="1" width="2" height="8" fill="#22191c"/><circle cx="10" cy="11.5" r="4.8" fill="#8a2f2f" stroke="#3a1414"/><circle cx="10" cy="11.5" r="1.8" fill="#ff6b6b"/><circle cx="10" cy="1.8" r="1.4" fill="#ff3b3b"/></svg>',
     rayo: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#878d94" stroke="#5d5a52"/><circle cx="10" cy="10" r="5.6" fill="#33373d" stroke="#b87333" stroke-width="1.4"/><circle cx="10" cy="10" r="3.4" fill="none" stroke="#d08a4a" stroke-width="1.2"/><circle cx="10" cy="10" r="1.9" fill="#dfe8ff"/><path d="M14.5 3.5l-2 3h2l-2 3" stroke="#fff07a" stroke-width="1" fill="none"/></svg>',
+    rotativo: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="1.5" y="1.5" width="17" height="17" rx="3" fill="#3d4048" stroke="#ffd23f" stroke-width="1.2"/><rect x="8" y="1" width="1.4" height="9" fill="#1a1c1e"/><rect x="10.6" y="1" width="1.4" height="9" fill="#1a1c1e"/><circle cx="10" cy="11.5" r="4.6" fill="#6b7a3e" stroke="#2b2e30"/><circle cx="10" cy="11.5" r="1.8" fill="#39421f"/></svg>',
+    glacial: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="1.5" y="1.5" width="17" height="17" rx="3" fill="#3d4048" stroke="#ffd23f" stroke-width="1.2"/><circle cx="10" cy="11" r="5.6" fill="#3a3350" stroke="#2f86ad" stroke-width="1.4"/><rect x="8.4" y="1.5" width="3.2" height="6" fill="#26202f"/><circle cx="10" cy="11" r="2.4" fill="#eaf8fd"/><circle cx="10" cy="2.5" r="1.4" fill="#7fd4f0"/></svg>',
+    domo: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="1.5" y="1.5" width="17" height="17" rx="3" fill="#3d4048" stroke="#ffd23f" stroke-width="1.2"/><circle cx="10" cy="10" r="6" fill="#56646e" stroke="#2b343b"/><circle cx="7.2" cy="7.2" r="1.4" fill="#c0392b"/><circle cx="12.8" cy="7.2" r="1.4" fill="#c0392b"/><circle cx="7.2" cy="12.8" r="1.4" fill="#c0392b"/><circle cx="12.8" cy="12.8" r="1.4" fill="#c0392b"/><circle cx="10" cy="10" r="1.6" fill="#dfe8ff" stroke="#b87333" stroke-width=".8"/></svg>',
+    reactor: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="1.5" y="1.5" width="17" height="17" rx="3" fill="#3d4048" stroke="#ffd23f" stroke-width="1.2"/><circle cx="10" cy="11" r="5.6" fill="#2a0f24" stroke="#b87333" stroke-width="1.3"/><rect x="9" y="1.5" width="2" height="6" fill="#22191c"/><circle cx="10" cy="11" r="3.2" fill="#ff7ad9"/><circle cx="10" cy="11" r="1.4" fill="#fff"/><circle cx="10" cy="2.4" r="1.2" fill="#ff3b3b"/></svg>',
+    estrella: '<svg viewBox="0 0 20 20" width="22" height="22"><path d="M10 2l2.4 5 5.4.6-4 3.7 1.1 5.4L10 14l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" fill="#ff7ad9" stroke="#5a0d48" stroke-width=".8"/></svg>',
+    flecha: '<svg viewBox="0 0 20 20" width="22" height="22" fill="none" stroke="#9cc9f2" stroke-width="2"><path d="M12 4l-6 6 6 6"/></svg>',
     candado: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#4a6080" stroke-width="1.6"><rect x="5" y="9" width="10" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 016 0V9"/></svg>'
   };
 
+  // Barra de torres: la fila normal termina en ★, que cambia a la fila de torres combo (y ← vuelve)
+  let filaCombo = false;
   function armarBotonesTorre() {
     const cont = $('torres');
     cont.innerHTML = '';
     for (const tipo in D.torres) {
       const def = D.torres[tipo];
+      if (!!def.combo !== filaCombo) continue;
+      const abierta = !def.combo || desbloqueada(tipo);
       const b = document.createElement('button');
-      b.className = 'torre'; b.dataset.tipo = tipo;
-      b.innerHTML = ICONO[tipo] + '<span class="tn">' + def.corto + '</span><span class="tc">' + def.costo + 'cr</span>';
+      b.className = 'torre' + (abierta ? '' : ' bloq'); b.dataset.tipo = tipo;
+      b.innerHTML = (abierta ? ICONO[tipo] : ICONO.candado) + '<span class="tn">' + def.corto + '</span><span class="tc">' + (abierta ? cr(def.costo) + 'cr' : '?') + '</span>';
       b.addEventListener('click', () => {
         if (G.fase !== 'jugando') return;
+        if (!abierta) { aviso('Se desbloquea fusionando ' + def.receta.map(x => D.torres[x].corto).join(' + ') + ' con todas sus mejoras'); return; }
         G.tipoSel = G.tipoSel === tipo && !G.puntoSel ? null : tipo;
         G.torreSel = null;
         refrescarTodo();
       });
       cont.appendChild(b);
     }
+    const b = document.createElement('button');
+    b.className = 'torre cambio';
+    b.innerHTML = filaCombo ? ICONO.flecha + '<span class="tn">Volver</span><span class="tc">&nbsp;</span>' : ICONO.estrella + '<span class="tn">Combo</span><span class="tc">★</span>';
+    b.addEventListener('click', () => { filaCombo = !filaCombo; G.tipoSel = null; G.puntoSel = null; armarBotonesTorre(); refrescarTodo(); });
+    cont.appendChild(b);
   }
 
   function textoStats(tipo, s) {
+    if (tipo === 'rotativo') return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · a ' + s.objetivos + ' enemigos a la vez · alcance ' + s.alcance + ' · perforante';
+    if (tipo === 'glacial') return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · onda ' + s.onda + ' que congela ' + dec(s.congelaImpacto) + ' s · aura que ralentiza ' + Math.round(s.lento * 100) + '% · alcance ' + s.alcance;
+    if (tipo === 'domo') return 'Salva de ' + s.salva + ' misiles de ' + s.dano + ' en radio ' + s.radio + ' · cada ' + dec(s.cadencia) + ' s · ×' + s.multAire + ' a aéreos · rayo de ' + s.saltosImpacto + ' saltos al estallar · alcance ' + s.alcance;
+    if (tipo === 'reactor') return 'Haz de ' + s.danoSeg + ' por segundo · ancho ' + s.ancho + ' · largo ' + s.alcance + ' · perforante · arco de ' + s.arcoDano + ' a ' + s.arcoSaltos + ' enemigos cada ' + s.arcoCada + ' s';
     if (tipo === 'ametralladora') {
       return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) + (s.perforante ? ' · perforante' : '');
     }
@@ -1747,18 +1909,18 @@
 
   function refrescarPanel() {
     const tit = $('infoTitulo'), det = $('infoDet'), sin = $('infoSin');
-    const bC = $('btnConstruir'), bX = $('btnCancelar'), bP = $('btnPrioridad'), bV = $('btnVender');
-    let vC = false, vX = false, vP = false, vV = false, tSin = '';
+    const bC = $('btnConstruir'), bX = $('btnCancelar'), bP = $('btnPrioridad'), bV = $('btnVender'), bM = $('btnMejorar');
+    let vC = false, vX = false, vP = false, vV = false, vM = false, tSin = '';
 
     if (G.torreSel) {
       const t = G.torreSel, def = D.torres[t.tipo];
-      poner(tit, 'textContent', def.nombre + (t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
-      refrescarAtributos(t);
+      poner(tit, 'textContent', def.nombre + (def.combo ? ' · TORRE COMBO' : t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
+      if (!def.combo) refrescarAtributos(t);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
       for (const en of G.enlaces) {
-        if (!en.torres.includes(t)) continue;
-        const nom = (en.trio ? 'Trío ' : '') + en.sg.nombre;
+        if (!en.torres.includes(t) || en.trio) continue;
+        const nom = en.sg.nombre;
         const m0 = mios[nom] || (mios[nom] = { n: 0, carga: 0 });
         m0.n++; m0.carga = Math.max(m0.carga, Math.min(1, en.carga));
       }
@@ -1768,6 +1930,17 @@
       } else {
         tSin = 'Sin combo: pégale cualquier otra torre para activar uno';
       }
+      // Fusión: si la torre es parte de un trío, el botón muestra cuánto falta o permite fusionar
+      const trios = G.enlaces.filter(en => en.trio && en.torres.includes(t));
+      const enF = trios.find(listoFusion) || trios[0];
+      if (enF) {
+        const dF = D.torres[enF.sg.torre], falta = enF.torres.reduce((s2, u) => s2 + maxMejoras(u.tipo) - u.nivel, 0);
+        vM = true;
+        poner(bM, 'textContent', falta > 0 ? 'Fusión: faltan ' + falta + ' mejoras' : G.creditos >= dF.costo ? 'Fusionar ' + cr(dF.costo) + 'cr' : 'Fusión: faltan ' + cr(dF.costo - G.creditos) + 'cr');
+        poner(bM, 'disabled', falta > 0 || G.creditos < dF.costo);
+        tSin = 'Trío para ' + dF.nombre + ' (consume las tres torres) · ' + tSin;
+      }
+      if (def.combo) tSin = 'Torre combo: no tiene mejoras ni forma combos.';
       if (def.berserk) tSin = (t.berserk ? 'Berserk: ' + def.berserk.nombre + ' ' + Math.floor(Math.min(1, t.bCarga) * 100) + '%' : 'Berserk: faltan ' + (maxMejoras(t.tipo) - t.nivel) + ' mejoras') + ' · ' + tSin;
       vV = true; vP = !!t.s.arma && t.s.arma !== 'mina' && t.s.arma !== 'laser';   // minas y láser no eligen objetivo
       poner(bP, 'textContent', 'Objetivo: ' + D.prioridades[t.prioridad]);
@@ -1792,8 +1965,8 @@
       poner(det, 'textContent', 'Elige una torre de arriba y toca el lugar donde la quieres. Toca una torre ya construida para mejorar sus atributos o venderla.');
     }
     poner(sin, 'textContent', tSin);
-    mostrar(bC, vC); mostrar(bX, vX); mostrar(bP, vP); mostrar(bV, vV);
-    mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel);
+    mostrar(bC, vC); mostrar(bX, vX); mostrar(bP, vP); mostrar(bV, vV); mostrar(bM, vM);
+    mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel && !D.torres[G.torreSel.tipo].combo);
 
     for (const b of document.querySelectorAll('#torres .torre[data-tipo]')) {
       const tipo = b.dataset.tipo;
@@ -1938,6 +2111,7 @@
     let h = '<p class="mnota">Cada atributo se compra por separado. Se muestra el valor de cada nivel y su costo.</p>';
     for (const tipo in D.torres) {
       const def = D.torres[tipo];
+      if (def.combo) continue;   // las torres combo están en la pestaña Fusión
       h += '<div class="mcard"><div class="mcab">' + ICONO[tipo] + '<div><b>' + def.nombre + '</b><span>' + def.costo + ' créditos</span></div></div>' +
         '<p>' + def.desc + '</p>' +
         '<p class="mdato">' + (def.arma ? 'Daño ' + NOMBRE_DANO[def.tipoDano] + ' · ataca ' + (def.antiaerea ? 'tierra y aire' : 'solo tierra') : 'No dispara · afecta solo a enemigos en tierra') + '</p>' +
@@ -1997,13 +2171,16 @@
   }
 
   function manualTrios() {
-    let h = '<h3>Combos de 3 torres</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, forman un trío si sus tipos coinciden con uno de la lista.</li>' +
-      '<li>El trío <b>se suma</b> a los combos de 2 que ya tienen: no los apaga.</li>' +
-      '<li>Su medidor es un <b>triángulo magenta</b> al centro de las tres. Carga mientras alguna tiene enemigos a tiro y no se reparte con otros combos.</li>' +
-      '<li>No da bono permanente: es un ataque especial más fuerte, que crece con las mejoras de las tres torres.</li></ul>';
-    for (const sg of D.trios || []) {
-      h += '<div class="mcard ' + (sg.combo.efecto || 'fuego') + '"><div class="mcab">' + sg.entre.map(x => ICONO[x]).join('<em>+</em>') + '<div><b>' + sg.nombre + '</b><span>' + sg.entre.map(x => D.torres[x].corto).join(' + ') + '</span></div></div>' +
-        '<p><b>Ataque</b> (carga en ' + sg.combo.cargaSeg + ' s): ' + textoAtaque(sg, true) + '</p></div>';
+    let h = '<h3>Torres combo (fusión)</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, cuyos tipos sean la receta de una torre combo forman un trío. Al centro aparece un <b>triángulo magenta</b> que se llena a medida que mejoras las tres.</li>' +
+      '<li>Cuando las tres tienen <b>todas sus mejoras</b>, toca cualquiera de ellas: aparece el botón <b>Fusionar</b>.</li>' +
+      '<li>La fusión <b>consume las tres torres</b> (no se devuelve nada) y además cuesta ' + dec(D.fusion.factorPrecio) + ' veces lo que valen las tres al máximo. La torre combo queda en el centro del triángulo.</li>' +
+      '<li>La primera fusión de cada una la <b>desbloquea para siempre</b>: en las partidas siguientes se construye directo desde el botón <b>★ Combo</b> de la barra de torres, al mismo precio.</li>' +
+      '<li>Las torres combo no tienen mejoras ni forman combos.</li></ul><h3>Las ' + (D.fusiones || []).length + ' torres combo</h3>';
+    for (const f of D.fusiones || []) {
+      const def = D.torres[f.torre], abierta = desbloqueada(f.torre);
+      h += '<div class="mcard combo"><div class="mcab">' + (abierta ? ICONO[f.torre] : ICONO.candado) + '<div><b>' + def.nombre + '</b><span>' + (abierta ? 'Desbloqueada' : 'Bloqueada') + ' · ' + cr(def.costo) + ' créditos</span></div></div>' +
+        '<p class="mdato">Receta: ' + f.entre.map(x => ICONO[x]).join(' ') + ' ' + f.entre.map(x => D.torres[x].nombre).join(' + ') + ', las tres con todas sus mejoras.</p>' +
+        (abierta ? '<p>' + def.desc + '</p><p class="mdato">' + textoStats(f.torre, statsDe(f.torre, null)) + '</p>' : '<p class="mdato">Lo que hace se revela al desbloquearla.</p>') + '</div>';
     }
     return h;
   }
@@ -2094,6 +2271,15 @@
     }
     $('btnPrioridad').addEventListener('click', () => { if (G.torreSel) cambiarPrioridad(G.torreSel); refrescarTodo(); });
     $('btnVender').addEventListener('click', () => { if (G.torreSel) vender(G.torreSel); refrescarTodo(); });
+    // Botón de fusión (usa el botón btnMejorar, que no tenía otro uso)
+    $('btnMejorar').addEventListener('click', () => {
+      const t = G.torreSel;
+      if (!t) return;
+      const trios = G.enlaces.filter(en => en.trio && en.torres.includes(t));
+      const en = trios.find(listoFusion);
+      if (en) fusionar(en);
+      refrescarTodo();
+    });
     // Si la app pasa a segundo plano, se pausa sola
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && G.fase === 'jugando') { G.pausa = true; refrescarTodo(); }
