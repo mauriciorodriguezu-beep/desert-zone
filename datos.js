@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.3',
+  version: '0.4',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -46,12 +46,13 @@ const DATOS = {
      resist de los enemigos multiplica el daño según tipoDano (fisico / energia / explosivo).
      MEJORAS POR ATRIBUTO: cada atributo se compra por separado y tiene sus propios niveles.
      Cada nivel pisa los valores que trae. "nota" es el texto corto del efecto extra de ese nivel.
-     Los nombres internos de los atributos (dano, cadencia, alcance, frio, congelacion) no se cambian. */
+     Los nombres internos de los atributos (dano, cadencia, alcance, frio, congelacion, onda, radio) no se cambian.
+     arma: 'bala' impacta al instante; 'plasma' y 'misil' lanzan un proyectil que viaja (velProyectil, px/s). */
   torres: {
     ametralladora: {
       nombre: 'Ametralladora', corto: 'Ametr.', costo: 80,
       desc: 'Daño rápido, alcance corto. Dispara a tierra y aire.',
-      tipoDano: 'fisico', antiaerea: true,
+      arma: 'bala', tipoDano: 'fisico', antiaerea: true,
       dano: 8, cadencia: 0.35, alcance: 90,
       atributos: {
         dano: { nombre: 'Daño', niveles: [
@@ -92,33 +93,101 @@ const DATOS = {
           { costo: 190, congela: 2,   cadaSeg: 6, fragil: 0.3, nota: 'fragiliza' }   // los afectados reciben +30% de daño
         ] }
       }
+    },
+    plasma: {
+      nombre: 'Cañón de plasma', corto: 'Plasma', costo: 150,
+      desc: 'Daño alto y lento. Fuerte contra blindados. Solo ataca en tierra.',
+      arma: 'plasma', tipoDano: 'energia', antiaerea: false, velProyectil: 260,
+      dano: 60, cadencia: 1.8, alcance: 115, onda: 0,
+      atributos: {
+        dano: { nombre: 'Daño', niveles: [
+          { costo: 70,  dano: 80 },
+          { costo: 110, dano: 105 },
+          { costo: 170, dano: 135, critCada: 4, critMult: 2.5, nota: 'crítico' }   // cada 4º disparo hace daño x2,5
+        ] },
+        cadencia: { nombre: 'Cadencia', niveles: [
+          { costo: 60,  cadencia: 1.55 },
+          { costo: 100, cadencia: 1.3 },
+          { costo: 150, cadencia: 1.1 }
+        ] },
+        onda: { nombre: 'Onda', niveles: [                               // radio en que el impacto daña a los vecinos (50% del daño)
+          { costo: 60,  onda: 22 },
+          { costo: 90,  onda: 30 },
+          { costo: 130, onda: 38 }
+        ] }
+      }
+    },
+    misiles: {
+      nombre: 'Torre de misiles', corto: 'Misiles', costo: 180,
+      desc: 'Explosión en área y largo alcance. Ataca tierra y aire.',
+      arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 170,
+      dano: 45, cadencia: 2.0, alcance: 150, radio: 35, salva: 1,
+      atributos: {
+        dano: { nombre: 'Daño', niveles: [
+          { costo: 80,  dano: 58 },
+          { costo: 120, dano: 72 },
+          { costo: 180, dano: 88, aturde: 0.6, nota: 'aturde' }           // detiene 0,6 s a los alcanzados (jefes no)
+        ] },
+        radio: { nombre: 'Radio', niveles: [                             // radio de la explosión
+          { costo: 70,  radio: 42 },
+          { costo: 110, radio: 50 },
+          { costo: 160, radio: 58 }
+        ] },
+        cadencia: { nombre: 'Cadencia', niveles: [
+          { costo: 70,  cadencia: 1.75 },
+          { costo: 110, cadencia: 1.5 },
+          { costo: 220, cadencia: 1.5, salva: 2, nota: 'salva doble' }   // dos misiles por disparo
+        ] }
+      }
     }
   },
 
-  // Torres del GDD que todavía no están programadas (solo se muestran bloqueadas)
-  torresProximas: [
-    { corto: 'Plasma',  costo: 150 },
-    { corto: 'Misiles', costo: 200 }
-  ],
-
   /* COMBOS: dos torres pegadas (centros a colocacion.distCombo px o menos) forman un enlace con un combo.
-     - Bono permanente: el campo "para" indica qué torre lo recibe (una sola vez aunque tenga varias vecinas).
-     - Ataque especial ("combo"): el círculo entre las dos torres se va llenando mientras alguna de las dos
-       trabaja (dispara o frena enemigos). Al llenarse, el ataque sale solo.
+     - Bono permanente, para la torre del tipo "para" (una sola vez aunque tenga varias vecinas iguales):
+         bono: { stat, mult }   multiplica un valor de la torre (cadencia menor que 1 = dispara más rápido)
+         danoALentos            multiplica su daño contra enemigos ralentizados o congelados
+     - Ataque especial ("combo"): el círculo entre las dos torres se llena mientras alguna tiene enemigos a tiro.
+       Al llenarse, el ataque sale solo. Ignora las resistencias del enemigo.
+         tipo           'area'  la torre "desde" dispara una carga que estalla en un radio sobre su objetivo
+                        'linea' las dos torres disparan un rayo que atraviesa a todos los enemigos en línea
+                        'onda'  onda desde el punto medio de las dos torres (solo enemigos en tierra)
+         efecto         aspecto: 'hielo', 'plasma' o 'fuego'
          cargaSeg       segundos que tarda en llenarse con una sola vecina. Una torre con varias vecinas
                         reparte su carga: con 2 enlaces cada uno tarda el doble.
-         dano           daño base del ataque especial (ignora resistencias)
-         danoPorMejora  daño extra por cada mejora comprada entre las dos torres
-     Los "id" no se cambian: el código los usa. */
+         dano           daño base del ataque;  danoPorMejora  daño extra por cada mejora de las dos torres
+         congela        segundos que congela (tierra, jefes no);  aturde  segundos que detiene (jefes no)
+     Los "id" no se cambian. */
   sinergias: [
     { id: 'quebradizas', nombre: 'Metralla de hielo', entre: ['ametralladora', 'crio'], para: 'ametralladora',
-      danoALentos: 1.4,                                  // bono: +40% de daño a enemigos ralentizados o congelados
-      combo: { cargaSeg: 6, dano: 30, danoPorMejora: 3, radio: 45, congela: 0.8, texto: 'explosión que congela' } },
+      danoALentos: 1.4,
+      combo: { tipo: 'area', desde: 'ametralladora', efecto: 'hielo', cargaSeg: 6, dano: 30, danoPorMejora: 3, radio: 45, congela: 0.8, texto: 'explosión que congela' } },
     { id: 'cruzado', nombre: 'Fuego cruzado', entre: ['ametralladora', 'ametralladora'], para: 'ametralladora',
-      cadencia: 0.85,                                    // bono: dispara 15% más rápido
-      combo: { cargaSeg: 6, dano: 45, danoPorMejora: 7, largo: 170, ancho: 12, texto: 'ráfaga que atraviesa' } },
+      bono: { stat: 'cadencia', mult: 0.85 },
+      combo: { tipo: 'linea', efecto: 'fuego', cargaSeg: 6, dano: 45, danoPorMejora: 7, largo: 170, ancho: 12, texto: 'ráfaga que atraviesa' } },
     { id: 'ventisca', nombre: 'Ventisca', entre: ['crio', 'crio'], para: null,
-      combo: { cargaSeg: 8, dano: 15, danoPorMejora: 3, radio: 105, congela: 1.8, texto: 'onda que congela' } }
+      combo: { tipo: 'onda', efecto: 'hielo', cargaSeg: 8, dano: 15, danoPorMejora: 3, radio: 105, congela: 1.8, texto: 'onda que congela' } },
+
+    { id: 'termico', nombre: 'Choque térmico', entre: ['plasma', 'crio'], para: 'plasma',
+      danoALentos: 1.5,
+      combo: { tipo: 'area', desde: 'plasma', efecto: 'plasma', cargaSeg: 7, dano: 110, danoPorMejora: 6, radio: 30, congela: 0.6, texto: 'golpe fuerte que congela' } },
+    { id: 'lanza', nombre: 'Lanza de plasma', entre: ['plasma', 'ametralladora'], para: 'plasma',
+      bono: { stat: 'alcance', mult: 1.15 },
+      combo: { tipo: 'linea', efecto: 'plasma', cargaSeg: 7, dano: 70, danoPorMejora: 6, largo: 200, ancho: 12, texto: 'rayo que atraviesa' } },
+    { id: 'sobrecarga', nombre: 'Sobrecarga', entre: ['plasma', 'plasma'], para: 'plasma',
+      bono: { stat: 'dano', mult: 1.1 },
+      combo: { tipo: 'area', desde: 'plasma', efecto: 'plasma', cargaSeg: 8, dano: 150, danoPorMejora: 8, radio: 40, texto: 'descarga en área' } },
+    { id: 'designador', nombre: 'Bombardeo guiado', entre: ['misiles', 'ametralladora'], para: 'misiles',
+      bono: { stat: 'alcance', mult: 1.2 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 7, dano: 60, danoPorMejora: 5, radio: 55, aturde: 0.5, texto: 'explosión que aturde' } },
+    { id: 'criomisil', nombre: 'Misil criogénico', entre: ['misiles', 'crio'], para: 'misiles',
+      danoALentos: 1.3,
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'hielo', cargaSeg: 8, dano: 40, danoPorMejora: 4, radio: 60, congela: 1.5, texto: 'explosión grande que congela' } },
+    { id: 'bombardeo', nombre: 'Lluvia de misiles', entre: ['misiles', 'misiles'], para: 'misiles',
+      bono: { stat: 'radio', mult: 1.15 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'fuego', cargaSeg: 8, dano: 90, danoPorMejora: 7, radio: 70, texto: 'explosión muy amplia' } },
+    { id: 'ojiva', nombre: 'Ojiva de plasma', entre: ['plasma', 'misiles'], para: 'misiles',
+      bono: { stat: 'radio', mult: 1.25 },
+      combo: { tipo: 'area', desde: 'misiles', efecto: 'plasma', cargaSeg: 8, dano: 130, danoPorMejora: 8, radio: 50, texto: 'explosión de plasma' } }
   ],
 
   /* ENEMIGOS

@@ -90,7 +90,7 @@
     cola: [], tOleada: 0,
     cuenta: 0, enCuenta: false,
     pendientes: {},          // enemigos que faltan por resolver en cada oleada
-    torres: [], enemigos: [], efectos: [],
+    torres: [], enemigos: [], efectos: [], proyectiles: [],
     vel: 1, pausa: false,
     tipoSel: null, puntoSel: null, torreSel: null,
     bajas: 0, t: 0,
@@ -103,7 +103,7 @@
     G.vidas = D.inicio.vidas;
     G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
-    G.torres = []; G.enemigos = []; G.efectos = []; G.enlaces = [];
+    G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
     G.bajas = 0; G.t = 0;
     G.guardado.partidas++;
@@ -128,8 +128,17 @@
     }
     return s;
   }
+  // Valores finales: atributos + bonos permanentes de los combos que tiene la torre
+  function statsTorre(tipo, niv, sin) {
+    const s = statsDe(tipo, niv);
+    for (const id of sin || []) {
+      const sg = D.sinergias.find(x => x.id === id);
+      if (sg.bono && sg.para === tipo && s[sg.bono.stat] != null) s[sg.bono.stat] = Math.round(s[sg.bono.stat] * sg.bono.mult * 1000) / 1000;
+    }
+    return s;
+  }
   function calcular(t) {
-    t.s = statsDe(t.tipo, t.niv);
+    t.s = statsTorre(t.tipo, t.niv, t.sin);
     t.nivel = 0;
     for (const id in t.niv) t.nivel += t.niv[id];   // total de mejoras compradas (sube el daño de los combos)
   }
@@ -193,6 +202,7 @@
         }
       }
     }
+    for (const t of G.torres) calcular(t);   // los bonos dependen de las vecinas
   }
 
   // Qué combos se activarían si se construye "tipo" en el punto (x, y)
@@ -295,7 +305,7 @@
     const def = D.enemigos[tipo];
     const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
     const vida = def.vida * (1 + escala * (oleada - 1));
-    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, vivo: true };
+    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true };
     const p = posDe(e);
     e.x = p.x; e.y = p.y;
     G.enemigos.push(e);
@@ -325,6 +335,16 @@
     }
   }
 
+  // Multiplicador contra enemigos ralentizados o congelados que dan algunos combos (el mayor que tenga la torre)
+  function bonoALentos(t) {
+    let m = 1;
+    for (const id of t.sin) {
+      const sg = D.sinergias.find(x => x.id === id);
+      if (sg.danoALentos && sg.para === t.tipo && sg.danoALentos > m) m = sg.danoALentos;
+    }
+    return m;
+  }
+
   // Daño de un disparo normal: aplica resistencias, fragilidad y el bono contra enemigos frenados
   function danar(e, dano, t) {
     const s = t.s;
@@ -332,14 +352,12 @@
     if (m == null) m = 1;
     if (s.perforante && m < 1) m = 1;
     let d = dano * m * (1 + e.fragil);
-    if ((e.lento > 0 || e.congelado > 0) && t.sin.includes('quebradizas')) {
-      d *= D.sinergias.find(x => x.id === 'quebradizas').danoALentos;
-    }
+    if (e.lento > 0 || e.congelado > 0) d *= bonoALentos(t);
     aplicarDano(e, d);
   }
 
   // ── Combos ──
-  const trabajando = t => t.tipo === 'crio' ? !!t.activa : (t.tFuego != null && G.t - t.tFuego < 0.6);
+  const trabajando = t => !!t.activa;   // la torre tiene enemigos a tiro
   function distSegmento(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const k = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
@@ -348,26 +366,31 @@
 
   // Ataque especial de un enlace con la carga llena. Devuelve false si no había a quién atacar
   // (en ese caso la carga se conserva). Los combos ignoran las resistencias del enemigo.
+  // Hay tres formas, según combo.tipo en datos.js: 'area', 'linea' y 'onda'.
+  const CARTEL = { hielo: ['#e8fbff', '#0d3b55'], plasma: ['#f0e2ff', '#3a1f6b'], fuego: ['#fff3a0', '#5a3200'] };
+  const COLOR_COMBO = { hielo: 0x9fe8ff, plasma: 0xb98bff, fuego: 0xffd23f };
   function lanzarCombo(en) {
     const { a, b, sg } = en, c = sg.combo;
     const fuerza = c.dano + c.danoPorMejora * (a.nivel + b.nivel);
-    if (sg.id === 'quebradizas') {
-      // Metralla de hielo: la ametralladora dispara una carga que estalla, daña y congela en área
-      const tA = a.tipo === 'ametralladora' ? a : b;
-      const obj = elegirObjetivo(tA);
+    const efecto = CARTEL[c.efecto] ? c.efecto : 'fuego', color = COLOR_COMBO[efecto];
+    const golpear = e => {
+      if (c.congela && !e.def.aereo && !e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela);
+      if (c.aturde && !e.def.jefe) e.aturdido = Math.max(e.aturdido, c.aturde);
+      aplicarDano(e, fuerza * (1 + e.fragil));
+    };
+    if (c.tipo === 'area') {
+      // La torre "desde" dispara una carga que estalla sobre su objetivo y golpea todo lo que esté en el radio
+      const tD = a.tipo === c.desde ? a : b;
+      const obj = elegirObjetivo(tD);
       if (!obj) return false;
       const ox = obj.x, oy = obj.y;
-      for (const e of G.enemigos) {
-        if (!e.vivo || Math.hypot(e.x - ox, e.y - oy) > c.radio) continue;
-        if (!e.def.aereo && !e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela);
-        aplicarDano(e, fuerza * (1 + e.fragil));
-      }
-      tA.ang = Math.atan2(oy - tA.y, ox - tA.x); tA.tFuego = G.t;
-      G.efectos.push({ k: 'rayo', x1: tA.x, y1: tA.y, x2: ox, y2: oy, t: 0, dur: 0.25, color: 0x9fe8ff });
-      G.efectos.push({ k: 'hielo', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5 });
-      cartel(ox, oy - c.radio * 0.6, sg.nombre, '#e8fbff', '#0d3b55');
-    } else if (sg.id === 'cruzado') {
-      // Fuego cruzado: las dos ametralladoras disparan una ráfaga que atraviesa a todos los enemigos en su línea
+      for (const e of G.enemigos) if (e.vivo && Math.hypot(e.x - ox, e.y - oy) <= c.radio) golpear(e);
+      tD.ang = Math.atan2(oy - tD.y, ox - tD.x); tD.tFuego = G.t;
+      G.efectos.push({ k: 'rayo', x1: tD.x, y1: tD.y, x2: ox, y2: oy, t: 0, dur: 0.25, color });
+      G.efectos.push(efecto === 'hielo' ? { k: 'hielo', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5 } : { k: 'estallido', x: ox, y: oy, r: c.radio, t: 0, dur: 0.5, color });
+      cartel(ox, oy - Math.min(40, c.radio * 0.6), sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
+    } else if (c.tipo === 'linea') {
+      // Las dos torres disparan un rayo que atraviesa a todos los enemigos en su línea
       const obj = elegirObjetivo(a) || elegirObjetivo(b);
       if (!obj) return false;
       const ox = obj.x, oy = obj.y, tocados = new Set();
@@ -376,18 +399,18 @@
         const x2 = t.x + Math.cos(ang) * c.largo, y2 = t.y + Math.sin(ang) * c.largo;
         t.ang = ang; t.tFuego = G.t;
         for (const e of G.enemigos) if (e.vivo && distSegmento(e.x, e.y, t.x, t.y, x2, y2) <= c.ancho) tocados.add(e);
-        G.efectos.push({ k: 'rayo', x1: t.x, y1: t.y, x2, y2, t: 0, dur: 0.28, color: 0xffd23f });
+        G.efectos.push({ k: 'rayo', x1: t.x, y1: t.y, x2, y2, t: 0, dur: 0.28, color });
       }
-      for (const e of tocados) aplicarDano(e, fuerza * (1 + e.fragil));
-      cartel(ox, oy - 22, sg.nombre, '#fff3a0', '#5a3200');
-    } else if (sg.id === 'ventisca') {
-      // Ventisca: onda desde el punto medio de las dos crío que congela y daña alrededor
+      for (const e of tocados) golpear(e);
+      cartel(ox, oy - 22, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
+    } else {
+      // Onda desde el punto medio de las dos torres (solo enemigos en tierra)
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const dentro = G.enemigos.filter(e => e.vivo && !e.def.aereo && Math.hypot(e.x - mx, e.y - my) <= c.radio);
       if (!dentro.length) return false;
-      for (const e of dentro) { if (!e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela); aplicarDano(e, fuerza * (1 + e.fragil)); }
-      G.efectos.push({ k: 'hielo', x: mx, y: my, r: c.radio, t: 0, dur: 0.6 });
-      cartel(mx, my - 26, sg.nombre, '#e8fbff', '#0d3b55');
+      for (const e of dentro) golpear(e);
+      G.efectos.push(efecto === 'hielo' ? { k: 'hielo', x: mx, y: my, r: c.radio, t: 0, dur: 0.6 } : { k: 'estallido', x: mx, y: my, r: c.radio, t: 0, dur: 0.6, color });
+      cartel(mx, my - 26, sg.nombre, CARTEL[efecto][0], CARTEL[efecto][1]);
     }
     return true;
   }
@@ -421,7 +444,7 @@
     }
 
     // Efectos de las torres criogénicas (se recalculan en cada paso)
-    for (const e of G.enemigos) { e.lento = 0; e.fragil = 0; if (e.congelado > 0) e.congelado -= dt; }
+    for (const e of G.enemigos) { e.lento = 0; e.fragil = 0; if (e.congelado > 0) e.congelado -= dt; if (e.aturdido > 0) e.aturdido -= dt; }
     for (const t of G.torres) {
       if (t.tipo !== 'crio') continue;
       const s = t.s, r2 = s.alcance * s.alcance;
@@ -452,7 +475,7 @@
 
     // Movimiento
     for (const e of G.enemigos) {
-      if (e.congelado > 0) continue;
+      if (e.congelado > 0 || e.aturdido > 0) continue;
       e.dist += e.def.vel * (1 - e.lento) * dt;
       if (e.dist >= largoDe(e)) {
         const quita = e.def.vidas || 1;
@@ -465,20 +488,61 @@
       e.x = p.x; e.y = p.y;
     }
 
-    // Disparo
+    // Disparo. Cada torre con arma apunta al objetivo que le toca según su prioridad.
     for (const t of G.torres) {
-      if (t.tipo !== 'ametralladora') continue;
+      const s = t.s;
+      if (!s.arma) continue;
       t.enfria -= dt;
-      if (t.enfria > 0) continue;
       const e = elegirObjetivo(t);
-      if (!e) { t.enfria = 0; continue; }
+      t.activa = !!e;
+      if (!e) { if (t.enfria < 0) t.enfria = 0; continue; }
       t.ang = Math.atan2(e.y - t.y, e.x - t.x);
+      if (t.enfria > 0) continue;
       t.tFuego = G.t;
-      G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07, h: (e.lento > 0 || e.congelado > 0) && t.sin.includes('quebradizas') });
-      danar(e, t.s.dano, t);
-      t.enfria += t.s.cadencia * (t.sin.includes('cruzado') ? D.sinergias.find(x => x.id === 'cruzado').cadencia : 1);
+      if (s.arma === 'bala') {
+        // Impacto inmediato
+        G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: e.x, y2: e.y, t: 0, dur: 0.07, h: (e.lento > 0 || e.congelado > 0) && bonoALentos(t) > 1 });
+        danar(e, s.dano, t);
+      } else if (s.arma === 'plasma') {
+        t.tiros = (t.tiros || 0) + 1;
+        const critico = !!s.critCada && t.tiros % s.critCada === 0;
+        G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * (critico ? s.critMult : 1), onda: s.onda || 0, critico, torre: t, espera: 0 });
+      } else if (s.arma === 'misil') {
+        for (let i = 0; i < (s.salva || 1); i++) {
+          G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i ? 1 : -1 });
+        }
+      }
+      t.enfria += s.cadencia;
       if (t.enfria < 0) t.enfria = 0;
     }
+
+    // Proyectiles en vuelo: siguen a su objetivo; si muere, llegan al último lugar donde estuvo
+    for (const p of G.proyectiles) {
+      if (p.espera > 0) { p.espera -= dt; continue; }
+      if (p.obj && p.obj.vivo) { p.tx = p.obj.x; p.ty = p.obj.y; }
+      const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), paso = p.vel * dt;
+      p.ang = Math.atan2(dy, dx);
+      if (d > paso) { p.x += dx / d * paso; p.y += dy / d * paso; continue; }
+      p.fin = true; p.x = p.tx; p.y = p.ty;
+      if (p.k === 'plasma') {
+        const vivo = p.obj && p.obj.vivo;
+        if (vivo) danar(p.obj, p.dano, p.torre);
+        if (p.onda > 0) {
+          for (const e of G.enemigos) {
+            if (e.vivo && e !== p.obj && !e.def.aereo && Math.hypot(e.x - p.x, e.y - p.y) <= p.onda) danar(e, p.dano * 0.5, p.torre);
+          }
+        }
+        if (vivo || p.onda > 0) G.efectos.push({ k: 'estallido', x: p.x, y: p.y, r: Math.max(10, p.onda) * (p.critico ? 1.3 : 1), t: 0, dur: 0.28, color: 0xb98bff });
+      } else {
+        for (const e of G.enemigos) {
+          if (!e.vivo || Math.hypot(e.x - p.x, e.y - p.y) > p.radio) continue;
+          if (p.aturde && !e.def.jefe) e.aturdido = Math.max(e.aturdido, p.aturde);
+          danar(e, p.dano, p.torre);
+        }
+        G.efectos.push({ k: 'explosion', x: p.x, y: p.y, t: 0, dur: 0.4, e: p.radio / 20 });
+      }
+    }
+    G.proyectiles = G.proyectiles.filter(p => !p.fin);
 
     // Combos: cada enlace carga mientras alguna de sus dos torres está trabajando.
     // Una torre con varias vecinas reparte su carga: cada enlace carga más lento.
@@ -530,7 +594,9 @@
     hielo: 0xcfefff, crioAzul: 0x2f86ad, crioLuz: 0x7fd4f0,
     carbon: 0x4f4a48, carbonOsc: 0x2a2625, rojo: 0xa83232, rojoOsc: 0x4a1513,
     oro: 0xffd23f, sombra: 0x000000,
-    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff }
+    plasma: 0x6a4fb0, plasmaOsc: 0x2f2350, plasmaLuz: 0xd2b6ff,
+    misil: 0x56646e, misilOsc: 0x2b343b,
+    alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9 }
   };
   const ANCHO_CAMINO = 24;
   let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntrada = null, txtBase = null, TM = null;
@@ -744,13 +810,43 @@
     const x = t.x, y = t.y, crio = t.tipo === 'crio';
     // Losa de hormigón con pernos
     g.fillStyle(COL.sombra, 0.25 * alfa).fillRoundedRect(x - 13, y - 12, 31, 31, 5);
-    g.fillStyle(crio ? 0x8d959b : COL.losa, alfa).fillRoundedRect(x - 15, y - 15, 30, 30, 5);
+    g.fillStyle(crio ? 0x8d959b : t.tipo === 'plasma' ? 0x8b879b : t.tipo === 'misiles' ? 0x8a9296 : COL.losa, alfa).fillRoundedRect(x - 15, y - 15, 30, 30, 5);
     g.lineStyle(1.5, COL.losaBorde, alfa).strokeRoundedRect(x - 15, y - 15, 30, 30, 5);
     g.lineStyle(1, COL.losaLuz, 0.8 * alfa).lineBetween(x - 11, y - 13.5, x + 11, y - 13.5).lineBetween(x - 13.5, y - 11, x - 13.5, y + 11);
     g.fillStyle(COL.losaBorde, alfa);
     for (const [dx, dy] of [[-11, -11], [11, -11], [-11, 11], [11, 11]]) g.fillCircle(x + dx, y + dy, 1.3);
 
-    if (!crio) {
+    if (t.tipo === 'plasma') {
+      // Emisor de plasma: cañón corto y grueso con núcleo violeta que late
+      const a = t.ang, late = (Math.sin(G.t * 5 + x) + 1) / 2;
+      const recien = t.tFuego != null && G.t - t.tFuego < 0.12;
+      g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 10);
+      g.fillStyle(0x3a3350, alfa).fillCircle(x, y, 10);
+      g.lineStyle(1, COL.plasmaOsc, alfa).strokeCircle(x, y, 10);
+      poli(g, x, y, a, caja(3, -3.4, 12, 6.8), 0x26202f, alfa);
+      poli(g, x, y, a, caja(13, -4.4, 3, 8.8), COL.plasma, alfa);
+      poli(g, x, y, a, [[-7, -4], [-3, -7.5], [4, -7.5], [8, -4], [8, 4], [4, 7.5], [-3, 7.5], [-7, 4]], COL.plasma, alfa, COL.plasmaOsc, 1.2);
+      const cs = Math.cos(a), sn = Math.sin(a);
+      g.fillStyle(COL.plasmaLuz, alfa).fillCircle(x, y, 3.4 + late * 0.8);
+      g.fillStyle(0xffffff, 0.9 * alfa).fillCircle(x, y, 1.5);
+      g.fillStyle(recien ? 0xffffff : COL.plasmaLuz, (recien ? 1 : 0.55 + 0.3 * late) * alfa).fillCircle(x + cs * 16.5, y + sn * 16.5, recien ? 4.5 : 2.4);
+    } else if (t.tipo === 'misiles') {
+      // Lanzador: caja giratoria con cuatro tubos
+      const a = t.ang;
+      const recien = t.tFuego != null && G.t - t.tFuego < 0.15;
+      g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 9.5);
+      g.fillStyle(0x3d474e, alfa).fillCircle(x, y, 9.5);
+      g.lineStyle(1, COL.misilOsc, alfa).strokeCircle(x, y, 9.5);
+      poli(g, x, y, a, caja(-8, -7.5, 17, 15), COL.misil, alfa, COL.misilOsc, 1.2);
+      poli(g, x, y, a, caja(-8, -1, 17, 2), COL.misilOsc, alfa);
+      poli(g, x, y, a, caja(-8, -7.5, 3, 15), 0x3d474e, alfa);
+      for (const [tx, ty] of [[4, -4.4], [4, 4.4], [-2, -4.4], [-2, 4.4]]) {
+        const cs = Math.cos(a), sn = Math.sin(a), px = x + tx * cs - ty * sn, py = y + tx * sn + ty * cs;
+        g.fillStyle(0x15191c, alfa).fillCircle(px, py, 2.5);
+        g.fillStyle(0xc0392b, alfa).fillCircle(px, py, 1.3);
+      }
+      if (recien) poli(g, x, y, a, [[-9, -5], [-16, 0], [-9, 5]], 0xffc24a, 0.9);
+    } else if (!crio) {
       const a = t.ang, doble = t.s && t.s.doble;
       const disparando = t.tFuego != null && G.t - t.tFuego < 0.06;
       g.fillStyle(COL.sombra, 0.3 * alfa).fillCircle(x + 1.5, y + 2.5, 9.5);
@@ -900,6 +996,13 @@
       g.fillStyle(COL.crioLuz, 0.22).fillCircle(x, y, rr);
       g.lineStyle(1.5, COL.crioAzul, 0.9).strokeCircle(x, y, rr);
     }
+    if (e.aturdido > 0) {
+      // Aturdido: chispas amarillas girando
+      for (let i = 0; i < 3; i++) {
+        const as = G.t * 9 + i * 2.1;
+        g.fillStyle(COL.oro, 1).fillCircle(x + Math.cos(as) * rr, y + Math.sin(as) * rr * 0.7 - 2, 1.8);
+      }
+    }
     if (e.vida < e.vidaMax) {
       const k = Math.max(0, e.vida / e.vidaMax), w = jefe ? 40 : blind ? 24 : 18, by = y - (jefe ? 27 : blind ? 19 : 15);
       g.fillStyle(0x1b1b1b, 0.8).fillRect(x - w / 2 - 1, by - 1, w + 2, 5);
@@ -955,6 +1058,24 @@
 
     for (const e of G.enemigos) dibujarEnemigo(g, e);
 
+    // Proyectiles en vuelo
+    for (const p of G.proyectiles) {
+      if (p.espera > 0) continue;
+      const a = p.ang || 0, cs = Math.cos(a), sn = Math.sin(a);
+      if (p.k === 'plasma') {
+        const r = p.critico ? 6 : 4;
+        g.lineStyle(r, 0xb98bff, 0.35).lineBetween(p.x - cs * 12, p.y - sn * 12, p.x, p.y);
+        g.fillStyle(0xb98bff, 0.6).fillCircle(p.x, p.y, r + 2);
+        g.fillStyle(COL.plasmaLuz, 1).fillCircle(p.x, p.y, r);
+        g.fillStyle(0xffffff, 1).fillCircle(p.x, p.y, r * 0.45);
+      } else {
+        g.lineStyle(3, 0xffffff, 0.35).lineBetween(p.x - cs * 16, p.y - sn * 16, p.x - cs * 6, p.y - sn * 6);
+        poli(g, p.x, p.y, a, [[-9, -1.5], [-5, 0], [-9, 1.5]], 0xffa62b, 1);
+        poli(g, p.x, p.y, a, caja(-5, -1.8, 8, 3.6), 0xe8ecef, 1, 0x3d474e, 0.8);
+        poli(g, p.x, p.y, a, [[3, -1.8], [6.5, 0], [3, 1.8]], 0xc0392b, 1);
+      }
+    }
+
     for (const f of G.efectos) {
       const k = f.t / f.dur;
       if (f.k === 'traza') {
@@ -974,6 +1095,11 @@
       } else if (f.k === 'anillo') {
         g.lineStyle(4, 0xffffff, 0.9 * (1 - k)).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k));
         g.lineStyle(2, COL.crioAzul, 1 - k).strokeCircle(f.x, f.y, f.r * (0.3 + 0.7 * k) - 3);
+      } else if (f.k === 'estallido') {
+        const r = f.r * (0.4 + 0.6 * k);
+        g.fillStyle(f.color, 0.5 * (1 - k)).fillCircle(f.x, f.y, r);
+        g.fillStyle(0xffffff, 0.7 * (1 - k)).fillCircle(f.x, f.y, r * 0.45);
+        g.lineStyle(2.5, f.color, 1 - k).strokeCircle(f.x, f.y, r);
       } else if (f.k === 'polvo') {
         g.fillStyle(TM.polvo[0], 0.75 * (1 - k)).fillCircle(f.x, f.y, 4 + 9 * k);
         g.fillStyle(TM.polvo[1], 0.5 * (1 - k)).fillCircle(f.x + 3, f.y - 2, 3 + 6 * k);
@@ -1069,6 +1195,8 @@
   const ICONO = {
     ametralladora: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#928f85" stroke="#5d5a52"/><rect x="8.6" y="1" width="2.8" height="9" fill="#2b2e30"/><circle cx="10" cy="11" r="4.6" fill="#6b7a3e" stroke="#39421f"/><circle cx="10" cy="11" r="1.6" fill="#8c9b58"/></svg>',
     crio: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8d959b" stroke="#5d5a52"/><path d="M5 5l10 10M15 5L5 15" stroke="#5f7f92" stroke-width="2.6"/><circle cx="10" cy="10" r="4.6" fill="#eaf8fd" stroke="#2f86ad" stroke-width="1.4"/><circle cx="10" cy="10" r="2.2" fill="#7fd4f0"/></svg>',
+    plasma: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8b879b" stroke="#5d5a52"/><rect x="8" y="1.5" width="4" height="8" fill="#26202f"/><circle cx="10" cy="11" r="5" fill="#6a4fb0" stroke="#2f2350"/><circle cx="10" cy="11" r="2.2" fill="#d2b6ff"/><circle cx="10" cy="2.6" r="1.6" fill="#d2b6ff"/></svg>',
+    misiles: '<svg viewBox="0 0 20 20" width="22" height="22"><rect x="2" y="2" width="16" height="16" rx="3" fill="#8a9296" stroke="#5d5a52"/><rect x="5" y="5" width="10" height="11" rx="1" fill="#56646e" stroke="#2b343b"/><circle cx="7.8" cy="8" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="12.2" cy="8" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="7.8" cy="12.5" r="1.6" fill="#c0392b" stroke="#15191c"/><circle cx="12.2" cy="12.5" r="1.6" fill="#c0392b" stroke="#15191c"/></svg>',
     candado: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#4a6080" stroke-width="1.6"><rect x="5" y="9" width="10" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 016 0V9"/></svg>'
   };
 
@@ -1088,17 +1216,19 @@
       });
       cont.appendChild(b);
     }
-    for (const p of D.torresProximas) {
-      const b = document.createElement('button');
-      b.className = 'torre'; b.disabled = true;
-      b.innerHTML = ICONO.candado + '<span class="tn">' + p.corto + '</span><span class="tc tenue">Pronto</span>';
-      cont.appendChild(b);
-    }
   }
 
   function textoStats(tipo, s) {
     if (tipo === 'ametralladora') {
-      return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + s.alcance + (s.perforante ? ' · perforante' : '');
+      return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) + (s.perforante ? ' · perforante' : '');
+    }
+    if (tipo === 'plasma') {
+      return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) +
+        (s.onda ? ' · onda ' + Math.round(s.onda) : '') + (s.critCada ? ' · crítico cada ' + s.critCada + ' tiros' : '');
+    }
+    if (tipo === 'misiles') {
+      return 'Daño ' + s.dano + ' en radio ' + Math.round(s.radio) + ' · cada ' + dec(s.cadencia) + ' s · alcance ' + Math.round(s.alcance) +
+        (s.salva > 1 ? ' · salva doble' : '') + (s.aturde ? ' · aturde' : '');
     }
     return 'Ralentiza ' + Math.round(s.lento * 100) + '% · alcance ' + s.alcance +
       (s.congela ? ' · congela ' + dec(s.congela) + ' s cada ' + s.cadaSeg + ' s' : '') +
@@ -1109,7 +1239,9 @@
   const VER = {
     dano: s => String(s.dano),
     cadencia: s => dec(s.cadencia) + ' s',
-    alcance: s => String(s.alcance),
+    alcance: s => String(Math.round(s.alcance)),
+    onda: s => s.onda ? String(Math.round(s.onda)) : 'no',
+    radio: s => String(Math.round(s.radio)),
     frio: s => Math.round(s.lento * 100) + '%',
     congelacion: s => s.congela ? dec(s.congela) + ' s' : 'no'
   };
@@ -1130,7 +1262,7 @@
       let l2, l3;
       if (sig) {
         const nv = Object.assign({}, t.niv); nv[id] = n + 1;
-        const luego = ver(statsDe(t.tipo, nv));
+        const luego = ver(statsTorre(t.tipo, nv, t.sin));
         l2 = luego !== ahora ? ahora + ' → ' + luego : ahora;
         l3 = sig.costo + 'cr' + (sig.nota ? ' · ' + sig.nota : '');
       } else { l2 = ahora; l3 = 'Máximo'; }
@@ -1160,9 +1292,9 @@
       if (nombres.length) {
         tSin = 'Combo: ' + nombres.map(n => n + (mios[n].n > 1 ? ' ×' + mios[n].n : '') + ' ' + Math.floor(mios[n].carga * 100) + '%').join(' · ');
       } else {
-        tSin = t.tipo === 'crio' ? 'Sin combo: ponle una Ametralladora u otra Crío al lado' : 'Sin combo: ponle una Crío u otra Ametralladora al lado';
+        tSin = 'Sin combo: pégale cualquier otra torre para activar uno';
       }
-      vV = true; vP = t.tipo === 'ametralladora';
+      vV = true; vP = !!t.s.arma;
       poner(bP, 'textContent', 'Objetivo: ' + D.prioridades[t.prioridad]);
       poner(bV, 'textContent', 'Vender +' + valorVenta(t) + 'cr');
     } else if (G.tipoSel) {
