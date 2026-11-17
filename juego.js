@@ -1334,25 +1334,67 @@
   }
 
   // Medidor de carga del combo: círculo entre las dos torres que se va llenando
-  function medidorCombo(g, en) {
-    if (en.trio) return medidorTrio(g, en);
-    const mx = (en.a.x + en.b.x) / 2, my = (en.a.y + en.b.y) / 2, k = Math.min(1, en.carga);
-    const hace = G.t - en.tDisparo;
-    g.fillStyle(0x2a1c08, 0.9).fillCircle(mx, my, 7);
-    g.lineStyle(1, 0x000000, 0.5).strokeCircle(mx, my, 7);
-    if (k > 0) {
-      g.lineStyle(3.2, k >= 1 ? 0xffffff : COL.oro, 1);
-      g.beginPath(); g.arc(mx, my, 4.6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); g.strokePath();
+  // Medidores de combo. Los que caen a menos de 14 px entre sí (racimos de torres) se dibujan como uno solo:
+  // muestra la carga del más avanzado y "×n" con cuántos combos agrupa. Cada combo sigue cargando por su cuenta.
+  let txtMedidores = [];
+  function medidoresCombo(g) {
+    const grupos = [];
+    for (const en of G.enlaces || []) {
+      if (en.trio) continue;
+      const mx = (en.a.x + en.b.x) / 2, my = (en.a.y + en.b.y) / 2;
+      let gr = grupos.find(q => Math.hypot(q.x - mx, q.y - my) < 14);
+      if (!gr) { gr = { x: mx, y: my, sx: 0, sy: 0, ens: [] }; grupos.push(gr); }
+      gr.ens.push(en); gr.sx += mx; gr.sy += my;
     }
-    if (hace < 0.4) {
-      const q = hace / 0.4;
-      g.lineStyle(3, 0xffffff, 1 - q).strokeCircle(mx, my, 7 + 16 * q);
-      g.lineStyle(6, 0xffffff, 0.8 * (1 - q)).lineBetween(en.a.x, en.a.y, en.b.x, en.b.y);
+    let usados = 0;
+    for (const gr of grupos) {
+      const n = gr.ens.length, mx = gr.sx / n, my = gr.sy / n;
+      const k = Math.min(1, Math.max(...gr.ens.map(en => en.carga)));
+      const R = n > 1 ? 8 : 7, r = n > 1 ? 5.8 : 4.6;   // el medidor agrupado es un poco más grande
+      g.fillStyle(0x2a1c08, 0.9).fillCircle(mx, my, R);
+      g.lineStyle(1, 0x000000, 0.5).strokeCircle(mx, my, R);
+      if (k > 0) {
+        g.lineStyle(n > 1 ? 2.4 : 3.2, k >= 1 ? 0xffffff : COL.oro, 1);
+        g.beginPath(); g.arc(mx, my, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); g.strokePath();
+      }
+      for (const en of gr.ens) {
+        const hace = G.t - en.tDisparo;
+        if (hace >= 0.4) continue;
+        const q = hace / 0.4;
+        g.lineStyle(3, 0xffffff, 1 - q).strokeCircle(mx, my, 7 + 16 * q);
+        g.lineStyle(6, 0xffffff, 0.8 * (1 - q)).lineBetween(en.a.x, en.a.y, en.b.x, en.b.y);
+      }
+      if (n > 1 && escena) {
+        let o = txtMedidores[usados];
+        if (!o) {
+          o = escena.add.text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setResolution(ESC * 3).setDepth(3);
+          txtMedidores.push(o);
+        }
+        if (o.text !== '×' + n) o.setText('×' + n);
+        o.setPosition(mx, my + 0.3).setVisible(true);   // el número va dentro del medidor
+        usados++;
+      }
     }
+    for (let i = usados; i < txtMedidores.length; i++) txtMedidores[i].setVisible(false);
   }
 
-  // Medidor del trío: triángulo al centro de las tres torres. El anillo magenta muestra cuántas mejoras
-  // llevan las tres; lleno y blanco (latiendo) = listas para fusionar.
+  // Marca del trío: un triangulito magenta en la esquina de cada una de las tres torres (así no tapa a los
+  // medidores de combo). Se rellena a medida que se mejoran las tres; blanco y latiendo = listas para fusionar.
+  function marcasTrio(g, en) {
+    const ts = en.torres, tope = ts.reduce((s, t) => s + maxMejoras(t.tipo), 0) || 1;
+    const k = Math.min(1, ts.reduce((s, t) => s + t.nivel, 0) / tope), late = (Math.sin(G.t * 6) + 1) / 2;
+    for (const t of ts) {
+      const x = t.x - 11, y = t.y - 11;
+      g.fillStyle(0x2a0f24, 0.9).fillTriangle(x, y - 5.5, x - 5, y + 3.5, x + 5, y + 3.5);
+      if (k >= 1) g.fillStyle(0xffffff, 0.6 + 0.4 * late).fillTriangle(x, y - 4, x - 3.6, y + 2.5, x + 3.6, y + 2.5);
+      else if (k > 0) {
+        const h = 6.5 * k;   // se llena de abajo hacia arriba
+        g.fillStyle(0xff7ad9, 1).fillTriangle(x - 3.6 * (h / 6.5), y + 2.5 - h, x - 3.6, y + 2.5, x + 3.6, y + 2.5);
+        g.fillStyle(0xff7ad9, 1).fillTriangle(x - 3.6 * (h / 6.5), y + 2.5 - h, x + 3.6 * (h / 6.5), y + 2.5 - h, x + 3.6, y + 2.5);
+      }
+      g.lineStyle(1.2, k >= 1 ? 0xffffff : 0xff7ad9, 1).strokeTriangle(x, y - 5.5, x - 5, y + 3.5, x + 5, y + 3.5);
+    }
+  }
   function medidorTrio(g, en) {
     const ts = en.torres, mx = (ts[0].x + ts[1].x + ts[2].x) / 3, my = (ts[0].y + ts[1].y + ts[2].y) / 3;
     const tope = ts.reduce((s, t) => s + maxMejoras(t.tipo), 0) || 1;
@@ -1473,7 +1515,18 @@
   }
 
   function dibujarTorre(g, t, alfa) {
-    if (D.torres[t.tipo].combo) return dibujarTorreCombo(g, t, alfa);
+    if (D.torres[t.tipo].combo) {
+      // Torre combo: se dibuja al mismo tamaño que las demás (30 px) y se distingue por un aura magenta que late
+      const late = (Math.sin(G.t * 3 + t.x) + 1) / 2;
+      g.fillStyle(0xff7ad9, (0.10 + 0.12 * late) * alfa).fillCircle(t.x, t.y, 19 + 2 * late);
+      g.lineStyle(1.2, 0xff7ad9, (0.35 + 0.35 * late) * alfa).strokeCircle(t.x, t.y, 19 + 2 * late);
+      g.save();
+      g.translateCanvas(t.x, t.y);
+      g.scaleCanvas(30 / 36, 30 / 36);
+      dibujarTorreCombo(g, Object.assign({}, t, { x: 0, y: 0 }), alfa);
+      g.restore();
+      return;
+    }
     const x = t.x, y = t.y, crio = t.tipo === 'crio';
     // Losa de hormigón con pernos
     g.fillStyle(COL.sombra, 0.25 * alfa).fillRoundedRect(x - 13, y - 12, 31, 31, 5);
@@ -1778,7 +1831,8 @@
       g.fillStyle(parpadeo ? 0xff4a3a : 0x7a2a22, 1).fillCircle(m.x, m.y, 1.1);
     }
     for (const t of G.torres) dibujarTorre(g, t, 1);
-    for (const en of G.enlaces || []) medidorCombo(g, en);
+    medidoresCombo(g);
+    for (const en of G.enlaces || []) if (en.trio) marcasTrio(g, en);
     if (G.torreSel) {
       const t = G.torreSel;
       g.lineStyle(4, 0x3a2a10, 0.5).strokeRoundedRect(t.x - 18, t.y - 18, 36, 36, 7);
@@ -2421,7 +2475,7 @@
   }
 
   function manualTrios() {
-    let h = '<h3>Torres combo (fusión)</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, cuyos tipos sean la receta de una torre combo forman un trío. Al centro aparece un <b>triángulo magenta</b> que se llena a medida que mejoras las tres.</li>' +
+    let h = '<h3>Torres combo (fusión)</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, cuyos tipos sean la receta de una torre combo forman un trío. Cada una muestra un <b>triangulito magenta</b> en su esquina, que se llena a medida que mejoras las tres; cuando late en blanco, ya se pueden fusionar.</li>' +
       '<li>Cuando las tres tienen <b>todas sus mejoras</b>, toca cualquiera de ellas: aparece el botón <b>Fusionar</b>.</li>' +
       '<li>La fusión <b>consume las tres torres</b> (no se devuelve nada) y además cuesta ' + dec(D.fusion.factorPrecio) + ' veces lo que valen las tres al máximo. La torre combo queda en el centro del triángulo.</li>' +
       '<li>La primera fusión de cada una la <b>desbloquea para siempre</b>: en las partidas siguientes se construye directo desde el botón <b>★ Combo</b> de la barra de torres, al mismo precio.</li>' +
