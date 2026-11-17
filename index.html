@@ -228,6 +228,29 @@
     margin-top: 6px; height: 48px; padding: 0 36px; border-radius: 10px; font-size: 16px; font-weight: 700;
     background: #10301f; border: 1px solid #1f6a44; color: #8fe0b6;
   }
+  /* Resumen al terminar la partida */
+  #resumen { position: absolute; inset: 0; z-index: 11; overflow-y: auto; background: #070a13; padding-block: 22px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #resumen > div { max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  #resTitulo { margin: 0; text-align: center; font-size: 26px; letter-spacing: .02em; }
+  #resTitulo.gano { color: var(--verde); } #resTitulo.perdio { color: var(--rojo); }
+  #resSub { margin: -8px 0 0; text-align: center; font-size: 13px; color: var(--tenue); }
+  #resDatos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #resDatos div { background: var(--caja); border: 1px solid var(--linea); border-radius: 8px; padding: 9px 10px; }
+  #resDatos div:last-child:nth-child(odd) { grid-column: span 2; }
+  #resDatos b { display: block; font-size: 20px; color: var(--oro); font-variant-numeric: tabular-nums; }
+  #resDatos span { display: block; font-size: 12px; color: var(--texto); }
+  #resDatos em { display: block; font-style: normal; font-size: 11px; color: var(--tenue); margin-top: 1px; }
+  #resumen h3 { margin: 4px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tenue); }
+  #resDano { display: flex; flex-direction: column; gap: 6px; }
+  .resFila { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .resFila svg, .resSinIc { flex: none; width: 22px; height: 22px; }
+  .resSinIc { display: flex; align-items: center; justify-content: center; color: #ff7ad9; font-size: 16px; }
+  .resNom { flex: none; width: 112px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .resBarra { flex: 1; min-width: 0; height: 8px; border-radius: 4px; background: var(--caja); border: 1px solid var(--linea); overflow: hidden; }
+  .resBarra i { display: block; height: 100%; background: var(--oro); }
+  .resPct { flex: none; width: 38px; text-align: right; font-variant-numeric: tabular-nums; color: var(--tenue); }
+  .resVacio, #resBajas { margin: 0; font-size: 13px; color: var(--tenue); line-height: 1.5; }
+  #resSeguir { margin-top: 6px; height: 48px; border-radius: 10px; font-size: 16px; font-weight: 700; background: #10301f; border: 1px solid #1f6a44; color: #8fe0b6; }
 </style>
 </head>
 <body>
@@ -284,6 +307,7 @@
     <div id="veloAudio"><button id="veloMusica">Música: sí</button><button id="veloEfectos">Efectos: sí</button></div>
     <p id="veloCredito"></p>
   </div>
+  <div id="resumen" hidden><div><h1 id="resTitulo"></h1><p id="resSub"></p><div id="resDatos"></div><h3>Daño por torre</h3><div id="resDano"></div><h3 id="resBajasTit">Enemigos eliminados</h3><p id="resBajas"></p><button id="resSeguir">Continuar</button></div></div>
   <div id="historia" hidden><h1 id="historiaNombre">LAST HOPE</h1><div class="hEtiqueta">TRANSMISIÓN DE LA RESISTENCIA</div><p id="historiaTexto"></p><div id="historiaPuntos"></div><div class="hBotones"><button id="historiaSaltar">Saltar</button><button id="historiaSig">Siguiente</button></div></div>
 </div>
 <script>
@@ -305,8 +329,8 @@
   })();
 </script>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.17.4"></script>
-<script src="juego.js?v=0.17.4"></script>
+<script src="datos.js?v=0.18.0"></script>
+<script src="juego.js?v=0.18.0"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {

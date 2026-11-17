@@ -296,6 +296,7 @@
       v: 1, mapa: mapaId, modo, creditos: G.creditos, vidas: G.vidas, oleada: G.oleada, bajas: G.bajas,
       torres: G.torres.map(t => ({ tipo: t.tipo, x: t.x, y: t.y, niv: t.niv, invertido: t.invertido, prioridad: t.prioridad })),
       minas: G.minas.map(m => ({ x: m.x, y: m.y, i: G.torres.indexOf(m.torre), dano: m.dano, radio: m.radio, aturde: m.aturde })).filter(m => m.i >= 0),
+      est: G.est,
       fecha: Date.now()
     };
     try { localStorage.setItem(CLAVE_PARTIDA, JSON.stringify(p)); } catch (e) { /* sin almacenamiento */ }
@@ -313,6 +314,7 @@
     fijarTotal();
     G.fase = 'jugando';
     G.creditos = p.creditos; G.vidas = p.vidas; G.oleada = p.oleada; G.bajas = p.bajas || 0;
+    G.est = Object.assign(estNueva(), p.est || {});
     G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0; G.pendientes = {};
     G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = true; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null; G.t = 0;
@@ -352,8 +354,15 @@
     vel: 1, pausa: false,
     tipoSel: null, puntoSel: null, torreSel: null, moviendo: null,
     bajas: 0, t: 0,
+    est: estNueva(),
     guardado: cargarGuardado()
   };
+  // Estadísticas de la partida en curso (se muestran al terminar y se guardan con la partida)
+  function estNueva() {
+    return { seg: 0, limpias: 0, ganado: 0, gConstruir: 0, gMejoras: 0, gMover: 0, gFusion: 0, vendido: 0,
+      construidas: 0, mejoras: 0, fusiones: 0, primeraFusion: 0, berserks: 0, primerBerserk: 0, combos: 0,
+      adelantos: 0, maxEnJuego: 0, vidasPerdidas: 0, jefes: 0, dano: {}, bajasTipo: {} };
+  }
 
   function nuevaPartida() {
     borrarPartida();
@@ -365,6 +374,7 @@
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
     G.bajas = 0; G.t = 0;
+    G.est = estNueva();
     G.guardado.partidas++;
     guardar();
     limpiarFlotantes();
@@ -497,6 +507,8 @@
     const f = en.sg, def = D.torres[f.torre];
     if (!en.trio || !listoFusion(en) || G.creditos < def.costo || en.torres.some(t => !G.torres.includes(t))) return false;
     G.creditos -= def.costo;
+    G.est.gFusion += def.costo; G.est.fusiones++;
+    if (!G.est.primeraFusion) G.est.primeraFusion = Math.max(1, G.oleada);
     SON.sfx('fusion');
     const x = Math.round(en.torres.reduce((s, t) => s + t.x, 0) / 3), y = Math.round(en.torres.reduce((s, t) => s + t.y, 0) / 3);
     for (const t of en.torres) {
@@ -540,6 +552,7 @@
     if (!def || !puedeConstruir(x, y) || G.creditos < def.costo) return null;
     if (def.combo && !desbloqueada(tipo)) return null;
     G.creditos -= def.costo;
+    G.est.gConstruir += def.costo; G.est.construidas++;
     SON.sfx('construir');
     const t = {
       tipo, x, y,
@@ -565,6 +578,7 @@
     const m = mejoraSiguiente(t, id);
     if (!m || G.creditos < m.costo) return false;
     G.creditos -= m.costo;
+    G.est.gMejoras += m.costo; G.est.mejoras++;
     SON.sfx('mejorar');
     t.invertido += m.costo;
     t.niv[id] = (t.niv[id] || 0) + 1;
@@ -573,6 +587,7 @@
     for (const en of G.enlaces) {
       if (en.trio && en.torres.includes(t) && listoFusion(en)) { aviso('¡Fusión disponible: ' + en.sg.nombre + '! Toca una de las tres torres'); break; }
     }
+    if (t.berserk && !antes && !G.est.primerBerserk) G.est.primerBerserk = Math.max(1, G.oleada);
     if (t.berserk && !antes) { t.bCarga = 0; t.tBerserk = G.t; aviso('¡Modo berserk! ' + D.torres[t.tipo].nombre + ': ' + D.torres[t.tipo].berserk.nombre); }
     return true;
   }
@@ -587,6 +602,7 @@
     const i = G.torres.indexOf(t);
     if (i < 0) return false;
     G.creditos += valorVenta(t);
+    G.est.vendido += valorVenta(t);
     SON.sfx('vender');
     G.torres.splice(i, 1);
     G.minas = G.minas.filter(m => m.torre !== t);   // sus minas se retiran con ella
@@ -606,6 +622,7 @@
     G.moviendo = null;
     if (!ok) return false;
     G.creditos -= p;
+    G.est.gMover += p;
     SON.sfx('construir');
     t.x = x; t.y = y; t.pm = null;   // la minadora vuelve a calcular dónde sembrar
     recalcularSinergias();
@@ -695,8 +712,8 @@
     if (!puedeIniciar()) return false;
     let pendiente = 0;
     if (conBono) {
-      if (enJuego()) pendiente = bonoAdelanto();   // se cobra al limpiar esta oleada
-      else G.creditos += bonoAdelanto();
+      if (enJuego()) { pendiente = bonoAdelanto(); G.est.adelantos++; }   // se cobra al limpiar esta oleada
+      else { const b = bonoAdelanto(); G.creditos += b; G.est.ganado += b; }
     }
     G.oleada++;
     if (pendiente) G.bonoPend[G.oleada] = pendiente;
@@ -713,6 +730,7 @@
     G.salidas.push({ oleada: G.oleada, cola, t: 0 });
     G.pendientes[G.oleada] = cola.length;
     G.generando = true;
+    G.est.maxEnJuego = Math.max(G.est.maxEnJuego, enJuego());
     G.enCuenta = false; G.cuenta = 0;
     SON.sfx(oleadaConJefe(G.oleada) ? 'jefe' : 'oleada');
     if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de TERMINUS se acerca!' : '¡Un Coloso se acerca!');
@@ -737,6 +755,7 @@
       const extra = G.bonoPend[e.oleada] || 0;
       const bono = D.oleada.bonoBase + D.oleada.bonoPorOleada * e.oleada + extra;
       G.creditos += bono;
+      G.est.ganado += bono; G.est.limpias++;
       SON.sfx('limpia');
       delete G.bonoPend[e.oleada];
       aviso('Oleada ' + e.oleada + ' superada · +' + bono + 'cr' + (extra ? ' (incluye ' + extra + ' por adelantar)' : ''));
@@ -744,11 +763,16 @@
     }
   }
 
-  function aplicarDano(e, d) {
+  function aplicarDano(e, d, fuente) {
     if (!e.vivo) return;
+    const ef = Math.min(d, Math.max(0, e.vida));   // daño útil (sin contar el sobrante al matar)
+    G.est.dano[fuente || 'otro'] = (G.est.dano[fuente || 'otro'] || 0) + ef;
     e.vida -= d;
     if (e.vida <= 0) {
       G.creditos += e.def.premio;
+      G.est.ganado += e.def.premio;
+      G.est.bajasTipo[e.tipo] = (G.est.bajasTipo[e.tipo] || 0) + 1;
+      if (e.def.jefe) G.est.jefes++;
       G.bajas++;
       G.guardado.bajasTotales++;
       SON.sfx(e.def.jefe ? 'grande' : e.tipo === 'blindado' || e.tipo === 'dron' ? 'explosion' : 'muerte', e.def.jefe || e.tipo === 'blindado' || e.tipo === 'dron' ? 0.6 : 1);
@@ -777,7 +801,7 @@
     if (s.perforante && m < 1) m = 1;
     let d = dano * m * (1 + e.fragil);
     if (e.lento > 0 || e.congelado > 0) d *= bonoALentos(t);
-    aplicarDano(e, d);
+    aplicarDano(e, d, t.tipo);
   }
 
   // ── Combos ──
@@ -859,7 +883,7 @@
     const golpear = e => {
       if (c.congela && !e.def.aereo && !e.def.noCongela) e.congelado = Math.max(e.congelado, c.congela);
       if (c.aturde && !e.def.jefe) e.aturdido = Math.max(e.aturdido, c.aturde);
-      aplicarDano(e, fuerza * (1 + e.fragil));
+      aplicarDano(e, fuerza * (1 + e.fragil), 'combo');
     };
     if (c.tipo === 'area') {
       // La torre "desde" dispara una carga que estalla sobre su objetivo y golpea todo lo que esté en el radio
@@ -927,7 +951,7 @@
     if (crio) {
       for (const e of objs) {
         if (!e.def.noCongela) e.congelado = Math.max(e.congelado, b.congela);
-        aplicarDano(e, b.dano * (1 + e.fragil));
+        aplicarDano(e, b.dano * (1 + e.fragil), t.tipo);
       }
       G.efectos.push({ k: 'hielo', x: t.x, y: t.y, r: s.alcance, t: 0, dur: 0.7 });
     } else if (s.arma === 'bala') {
@@ -1042,6 +1066,7 @@
       if (e.dist >= largoDe(e)) {
         const quita = e.def.vidas || 1;
         G.vidas -= quita;
+        G.est.vidasPerdidas += Math.min(quita, Math.max(0, G.vidas + quita));
         SON.sfx('vida');
         aviso(e.def.jefe ? '¡El ' + e.def.nombre + ' llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
         resolverEnemigo(e);
@@ -1241,7 +1266,7 @@
       // Los tríos no reparten carga; los combos de 2 sí (una torre con varias vecinas carga cada uno más lento)
       en.carga += dt / (en.sg.combo.cargaSeg * (en.trio ? 1 : Math.max(en.a.nEnl, en.b.nEnl)));
       if (en.carga >= 1) {
-        if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; SON.sfx('combo'); }
+        if (lanzarCombo(en)) { G.est.combos++; en.carga = 0; en.tDisparo = G.t; SON.sfx('combo'); }
         else en.carga = 1;
       }
     }
@@ -1251,7 +1276,7 @@
       if (!t.berserk) continue;
       if (trabajando(t)) t.bCarga += dt / D.torres[t.tipo].berserk.cargaSeg;
       if (t.bCarga >= 1) {
-        if (lanzarBerserk(t)) { t.bCarga = 0; t.tBerserk = G.t; }
+        if (lanzarBerserk(t)) { G.est.berserks++; t.bCarga = 0; t.tBerserk = G.t; }
         else t.bCarga = 1;
       }
     }
@@ -1290,7 +1315,7 @@
     }
     guardar();
     G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
-    mostrarFinal();
+    mostrarResumen();
   }
 
   // ───────────────────────── 5. DIBUJO (Phaser) ─────────────────────────
@@ -2238,6 +2263,7 @@
       const delta = Math.min(200, ahora - (tPrevio || ahora));
       tPrevio = ahora;
       if (G.fase === 'jugando' && !G.pausa) {
+        G.est.seg += delta / 1000;
         let resto = delta / 1000 * G.vel;
         while (resto > 1e-6 && G.fase === 'jugando') {
           const paso = Math.min(resto, 1 / 30);
@@ -2637,6 +2663,50 @@
     if (p) $('veloContinuar').textContent = '▶ Continuar: ' + D.mapas[p.mapa].nombre + (p.modo === 'infinito' ? ' (infinito)' : '') + ' · oleada ' + p.oleada;
     $('velo').hidden = false;
   }
+  // Resumen de la partida: aparece al terminar, antes de volver a la pantalla de inicio
+  function mostrarResumen() {
+    const e = G.est, gano = G.fase === 'victoria';
+    const min = Math.floor(e.seg / 60), seg = Math.floor(e.seg % 60);
+    const invertido = e.gConstruir + e.gMejoras + e.gMover + e.gFusion;
+    const enOleada = n => n ? 'oleada ' + n : 'no hubo';
+    $('resTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
+    $('resTitulo').className = gano ? 'gano' : 'perdio';
+    $('resSub').textContent = MAPA.nombre + ' · ' + (modo === 'infinito' ? 'modo infinito' : 'campaña') + ' · ' +
+      (modo === 'infinito' ? 'llegaste a la oleada ' + G.oleada + (esRecord ? ' · ¡nuevo récord!' : '')
+        : gano ? TOTAL_OLEADAS + ' de ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
+    const dato = (v, t, sub) => '<div><b>' + v + '</b><span>' + t + (sub ? '<em>' + sub + '</em>' : '') + '</span></div>';
+    $('resDatos').innerHTML =
+      dato(e.limpias, 'oleadas superadas') +
+      dato(min + ':' + String(seg).padStart(2, '0'), 'tiempo de juego', 'sin contar pausas') +
+      dato(G.vidas, 'vidas restantes', e.vidasPerdidas + (e.vidasPerdidas === 1 ? ' perdida' : ' perdidas')) +
+      dato(cr(G.bajas), 'enemigos eliminados', e.jefes ? e.jefes + ' jefe' + (e.jefes > 1 ? 's' : '') : '') +
+      dato(cr(e.ganado), 'créditos ganados', '') +
+      dato(cr(invertido), 'créditos invertidos', e.vendido ? cr(e.vendido) + ' recuperados al vender' : '') +
+      dato(e.construidas, 'torres construidas', e.mejoras + ' mejoras') +
+      dato(e.fusiones, 'fusiones', 'primera: ' + enOleada(e.primeraFusion)) +
+      dato(e.berserks, 'ataques berserk', 'primer berserk: ' + enOleada(e.primerBerserk)) +
+      dato(cr(e.combos), 'ataques combo', '') +
+      dato(e.adelantos, 'oleadas adelantadas', 'máx. ' + Math.max(1, e.maxEnJuego) + ' en juego a la vez');
+    // Daño por torre, de mayor a menor
+    const total = Object.values(e.dano).reduce((a, b) => a + b, 0) || 1;
+    const filas = Object.entries(e.dano).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    $('resDano').innerHTML = filas.length ? filas.map(([k, v]) => {
+      const p = v / total * 100;
+      const nombre = k === 'combo' ? 'Ataques combo' : D.torres[k] ? D.torres[k].nombre : 'Otros';
+      const ic = D.torres[k] && ICONO[k] ? ICONO[k] : '<span class="resSinIc">★</span>';
+      return '<div class="resFila">' + ic + '<span class="resNom">' + nombre + '</span><span class="resBarra"><i style="width:' + p.toFixed(1) + '%"></i></span><span class="resPct">' + (p < 1 ? '<1' : Math.round(p)) + '%</span></div>';
+    }).join('') : '<p class="resVacio">No hubo daño registrado.</p>';
+    // Bajas por tipo de enemigo
+    const bt = Object.entries(e.bajasTipo).sort((a, b) => b[1] - a[1]);
+    $('resBajas').textContent = bt.map(([k, n]) => (D.enemigos[k] ? D.enemigos[k].nombre : k) + ' ' + cr(n)).join(' · ');
+    mostrar($('resBajasTit'), bt.length > 0);
+    // Se guarda como "última partida" (para revisar balance)
+    G.guardado.ultima = { mapa: mapaId, modo, resultado: G.fase, oleada: G.oleada, vidas: G.vidas, bajas: G.bajas, est: e, fecha: Date.now() };
+    guardar();
+    $('resumen').scrollTop = 0;
+    $('resumen').hidden = false;
+  }
+
   function mostrarFinal() {
     mostrar($('veloContinuar'), false);
     const gano = G.fase === 'victoria';
@@ -2873,6 +2943,7 @@
       if (histI < D.historia.length - 1) { histI++; pintarHistoria(); } else cerrarHistoria();
     });
     $('manualCerrar').addEventListener('click', () => { $('manual').hidden = true; });
+    $('resSeguir').addEventListener('click', () => { $('resumen').hidden = true; mostrarFinal(); });
     for (const b of $('manualTabs').children) b.addEventListener('click', () => { manualTab = b.dataset.tab; pintarManual(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
     // Reiniciar pide un segundo toque para no perder la partida por error
