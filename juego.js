@@ -196,6 +196,8 @@
   // con tope de 1,5 millones de píxeles para no cargar de más a los teléfonos.
   const ESC = Math.max(1, Math.min(3, Math.ceil(window.devicePixelRatio || 1), Math.floor(Math.sqrt(1.5e6 / (W * H)) * 2) / 2));
   const $ = id => document.getElementById(id);
+  // Nitidez de los textos del mapa. En modo compatible (canvas 2D) Phaser los agranda si se sube la resolución.
+  const resTxt = m => (escena && escena.sys.game.renderer.type === Phaser.CANVAS) ? 1 : ESC * (m || 1);
   const cr = n => Math.floor(n).toLocaleString('es-CL');
   const dec = n => String(Math.round(n * 100) / 100).replace('.', ',');
 
@@ -1340,7 +1342,7 @@
     const o = escena.add.text(x, y, txt, {
       fontFamily: 'system-ui, sans-serif', fontSize: '11px', fontStyle: 'bold',
       color: '#fff0a0', stroke: '#4a3200', strokeThickness: 3
-    }).setOrigin(0.5).setResolution(ESC).setDepth(5);
+    }).setOrigin(0.5).setResolution(resTxt()).setDepth(5);
     flotantes.push({ o, t: 0, y0: y });
   }
   // Cartel grande con el nombre del combo
@@ -1350,7 +1352,7 @@
     const o = escena.add.text(x, y, '¡' + txt + '!', {
       fontFamily: 'system-ui, sans-serif', fontSize: '15px', fontStyle: 'bold',
       color, stroke: borde, strokeThickness: 4
-    }).setOrigin(0.5).setResolution(ESC).setDepth(6);
+    }).setOrigin(0.5).setResolution(resTxt()).setDepth(6);
     flotantes.push({ o, t: 0, y0: y, dur: 1.2, sube: 14 });
   }
   function limpiarFlotantes() { for (const f of flotantes) f.o.destroy(); flotantes = []; }
@@ -1506,7 +1508,7 @@
     for (const o of txtEntradas) o.destroy();
     txtEntradas = RUTAS.map(R => {
       const p0 = R.puntos[0], p1 = R.puntos[1], horiz = Math.abs(p1.x - p0.x) >= Math.abs(p1.y - p0.y);
-      const o = escena.add.text(0, 0, 'ENTRADA', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: TM.texto }).setResolution(ESC);
+      const o = escena.add.text(0, 0, 'ENTRADA', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: TM.texto }).setResolution(resTxt());
       if (horiz) o.setPosition(4, p0.y - 30); else o.setPosition(p0.x + 20, 3);
       return o;
     });
@@ -1565,7 +1567,7 @@
       if (n > 1 && escena) {
         let o = txtMedidores[usados];
         if (!o) {
-          o = escena.add.text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setResolution(ESC * 3).setDepth(3);
+          o = escena.add.text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setResolution(resTxt(3)).setDepth(3);
           txtMedidores.push(o);
         }
         if (o.text !== '×' + n) o.setText('×' + n);
@@ -2175,7 +2177,7 @@
       this.input.addPointer(1);   // segundo dedo, para pellizcar
       gFondo = this.add.graphics();
       const estilo = { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: '#5a3d1a' };
-      txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
+      txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(resTxt());
       pintarMapa();
       gDin = this.add.graphics().setDepth(2);
       this.input.mouse && this.input.mouse.disableContextMenu();
@@ -2954,8 +2956,13 @@
   pintarSonido();
   mostrarMenu();
   abrirHistoria();   // cada vez que se abre el juego, la historia antes del menú (se puede saltar)
-  new Phaser.Game({
-    type: Phaser.AUTO,
+  // Renderizado: WebGL si se puede; "modo compatible" (canvas 2D) si el teléfono pierde el contexto WebGL
+  // o si se abre con ?canvas en la dirección. La elección queda guardada en el teléfono.
+  let modoCanvas = /[?&]canvas/.test(location.search);
+  try { modoCanvas = modoCanvas || localStorage.getItem('td_render') === 'canvas'; } catch (e) { /* nada */ }
+  if (/[?&]webgl/.test(location.search)) { modoCanvas = false; try { localStorage.removeItem('td_render'); } catch (e) { /* nada */ } }
+  const juego = new Phaser.Game({
+    type: modoCanvas ? Phaser.CANVAS : Phaser.AUTO,
     parent: 'mapa',
     width: W * ESC, height: H * ESC,
     backgroundColor: '#d8b878',
@@ -2965,6 +2972,17 @@
     scene: escenaJuego
   });
 
+  juego.events.once('ready', () => {
+    const lienzo = juego.canvas;
+    if (!lienzo || juego.renderer.type !== Phaser.WEBGL) return;
+    lienzo.addEventListener('webglcontextlost', ev => {
+      ev.preventDefault();
+      try { localStorage.setItem('td_render', 'canvas'); } catch (e) { /* nada */ }
+      if (window.mostrarErrorJuego) window.mostrarErrorJuego('El teléfono perdió el contexto gráfico (WebGL). Recargando en modo compatible…');
+      setTimeout(() => location.reload(), 1500);
+    });
+  });
+
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, W, H, fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { G, D, W, H, renderer: () => juego.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl', fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();
