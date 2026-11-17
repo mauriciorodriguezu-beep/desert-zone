@@ -5,17 +5,17 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.4',
+  version: '0.5',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
   desbloquearTodo: true,
 
-  // Campo de 360 x 440 px. La cuadrícula de 40 px solo se usa para trazar el camino;
-  // las torres se ubican libremente.
+  // Campo de 440 x 540 px (11 columnas x 13,5 filas de 40 px). La cuadrícula solo se usa para
+  // trazar el camino; las torres se ubican libremente.
   celda: 40,
-  cols: 9,
-  filas: 11,
+  cols: 11,
+  filas: 13.5,
 
   colocacion: {
     tamTorre: 30,     // lado de la torre; dos torres no pueden montarse
@@ -23,7 +23,7 @@ const DATOS = {
     distCombo: 48     // dos torres forman combo si sus centros están a esta distancia o menos
   },
 
-  inicio: { creditos: 200, vidas: 20 },
+  inicio: { creditos: 300, vidas: 20 },
 
   // Al vender se recupera este % de TODO lo invertido (compra + mejoras)
   venta: 0.6,
@@ -215,7 +215,7 @@ const DATOS = {
   },
 
   /* MAPAS
-     camino: esquinas del recorrido en [columna, fila]; -1 y 9 quedan fuera del campo (entrada y base).
+     camino: esquinas del recorrido en [columna, fila]; -1 y 11 quedan fuera del campo (entrada y base).
      oleadas: cada oleada es una lista de grupos { tipo, n, cada (s entre enemigos), desde (s de inicio, opcional) }.
      Si no se indica "desde", el grupo parte 1 s después de terminar el anterior.
      La vida de todos los enemigos, jefe incluido, crece con el número de oleada (oleada.escalaVida);
@@ -224,7 +224,7 @@ const DATOS = {
   mapas: {
     desierto: {
       nombre: 'Zona desértica', dificultad: 'Fácil', tema: 'desierto',
-      camino: [[-1, 1], [7, 1], [7, 5], [1, 5], [1, 9], [9, 9]],
+      camino: [[-1, 1], [9, 1], [9, 6], [1, 6], [1, 11], [11, 11]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 6,  cada: 1.2 }],
         /*  2 */ [{ tipo: 'soldado', n: 10, cada: 1.0 }],
@@ -245,14 +245,23 @@ const DATOS = {
         /* 17 */ [{ tipo: 'blindado', n: 12, cada: 1.2 }],
         /* 18 */ [{ tipo: 'soldado', n: 26, cada: 0.4, desde: 0 }, { tipo: 'blindado', n: 6, cada: 1.6, desde: 5 }],
         /* 19 */ [{ tipo: 'blindado', n: 12, cada: 1.3, desde: 0 }, { tipo: 'soldado', n: 20, cada: 0.5, desde: 2 }],
-        /* 20 JEFE */ [{ tipo: 'soldado', n: 16, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 6 }]
+        /* 20 JEFE */ [{ tipo: 'soldado', n: 16, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 6 }],
+        /* 21 */ [{ tipo: 'soldado', n: 28, cada: 0.4 }],
+        /* 22 */ [{ tipo: 'blindado', n: 12, cada: 1.2, desde: 0 }, { tipo: 'soldado', n: 12, cada: 0.6, desde: 3 }],
+        /* 23 */ [{ tipo: 'soldado', n: 30, cada: 0.35, desde: 0 }, { tipo: 'blindado', n: 6, cada: 1.6, desde: 2 }],
+        /* 24 */ [{ tipo: 'blindado', n: 16, cada: 1.1 }],
+        /* 25 */ [{ tipo: 'soldado', n: 24, cada: 0.4, desde: 0 }, { tipo: 'blindado', n: 10, cada: 1.3, desde: 4 }],
+        /* 26 */ [{ tipo: 'soldado', n: 36, cada: 0.3 }],
+        /* 27 */ [{ tipo: 'blindado', n: 18, cada: 1.0, desde: 0 }, { tipo: 'soldado', n: 16, cada: 0.5, desde: 5 }],
+        /* 28 */ [{ tipo: 'soldado', n: 30, cada: 0.35, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.2, desde: 3 }],
+        /* 29 */ [{ tipo: 'blindado', n: 20, cada: 0.9, desde: 0 }, { tipo: 'soldado', n: 24, cada: 0.4, desde: 2 }],
+        /* 30 JEFE FINAL */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 8 }, { tipo: 'blindado', n: 10, cada: 1.2, desde: 14 }]
       ]
     },
 
     artico: {
       nombre: 'Base ártica', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
-      escalaVida: 0.30,   // en este escenario los enemigos suben +30% de vida por oleada
-      camino: [[-1, 1], [3, 1], [3, 4], [6, 4], [6, 7], [2, 7], [2, 9], [9, 9]],
+      camino: [[-1, 1], [4, 1], [4, 4], [8, 4], [8, 8], [2, 8], [2, 11], [11, 11]],
       oleadas: [
         /*  1 */ [{ tipo: 'soldado', n: 8,  cada: 1.0 }],
         /*  2 */ [{ tipo: 'soldado', n: 10, cada: 0.9 }],
@@ -273,7 +282,17 @@ const DATOS = {
         /* 17 */ [{ tipo: 'blindado', n: 12, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 8, cada: 0.5, desde: 6 }],
         /* 18 */ [{ tipo: 'soldado', n: 26, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 4 }],
         /* 19 */ [{ tipo: 'blindado', n: 12, cada: 1.3, desde: 0 }, { tipo: 'corredor', n: 16, cada: 0.4, desde: 2 }, { tipo: 'dron', n: 10, cada: 0.7, desde: 6 }],
-        /* 20 JEFE */ [{ tipo: 'soldado', n: 16, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 6 }, { tipo: 'corredor', n: 10, cada: 0.4, desde: 9 }, { tipo: 'dron', n: 10, cada: 0.6, desde: 10 }]
+        /* 20 JEFE */ [{ tipo: 'soldado', n: 16, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 8, cada: 1.5, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 6 }, { tipo: 'corredor', n: 10, cada: 0.4, desde: 9 }, { tipo: 'dron', n: 10, cada: 0.6, desde: 10 }],
+        /* 21 */ [{ tipo: 'soldado', n: 28, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 12, cada: 0.6, desde: 3 }],
+        /* 22 */ [{ tipo: 'blindado', n: 12, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 16, cada: 0.4, desde: 4 }],
+        /* 23 */ [{ tipo: 'corredor', n: 20, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 2 }],
+        /* 24 */ [{ tipo: 'blindado', n: 16, cada: 1.1, desde: 0 }, { tipo: 'dron', n: 10, cada: 0.8, desde: 5 }],
+        /* 25 */ [{ tipo: 'soldado', n: 30, cada: 0.35, desde: 0 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 3 }, { tipo: 'dron', n: 10, cada: 0.8, desde: 6 }],
+        /* 26 */ [{ tipo: 'dron', n: 18, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.2, desde: 2 }],
+        /* 27 */ [{ tipo: 'blindado', n: 18, cada: 1.0, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.35, desde: 5 }],
+        /* 28 */ [{ tipo: 'soldado', n: 32, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 16, cada: 0.5, desde: 4 }],
+        /* 29 */ [{ tipo: 'blindado', n: 20, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 6 }],
+        /* 30 JEFE FINAL */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefeFinal', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 14, cada: 0.5, desde: 12 }]
       ]
     }
   }

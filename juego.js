@@ -12,8 +12,9 @@
   // ───────────────────────── 1. PREPARACIÓN ─────────────────────────
   const D = DATOS;
   const C = D.celda, W = D.cols * C, H = D.filas * C;
-  // Factor de nitidez: el lienzo se dibuja a 2x o 3x en pantallas de alta densidad
-  const ESC = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1)));
+  // Factor de nitidez: el lienzo se dibuja a más resolución en pantallas de alta densidad,
+  // con tope de 1,5 millones de píxeles para no cargar de más a los teléfonos.
+  const ESC = Math.max(1, Math.min(3, Math.ceil(window.devicePixelRatio || 1), Math.floor(Math.sqrt(1.5e6 / (W * H)) * 2) / 2));
   const $ = id => document.getElementById(id);
   const cr = n => Math.floor(n).toLocaleString('es-CL');
   const dec = n => String(Math.round(n * 100) / 100).replace('.', ',');
@@ -1152,16 +1153,21 @@
       listo = true;
       refrescarTodo();
     },
-    update(_t, delta) {
+    update() {
+      // Tiempo real entre cuadros (tope 200 ms), medido con el reloj y no con el de Phaser,
+      // para que el juego avance a su velocidad aunque el teléfono dibuje lento
+      const ahora = performance.now();
+      const delta = Math.min(200, ahora - (tPrevio || ahora));
+      tPrevio = ahora;
       if (G.fase === 'jugando' && !G.pausa) {
-        let resto = Math.min(delta, 100) / 1000 * G.vel;
+        let resto = delta / 1000 * G.vel;
         while (resto > 1e-6 && G.fase === 'jugando') {
           const paso = Math.min(resto, 1 / 30);
           avanzar(paso);
           resto -= paso;
         }
       }
-      const dtReal = Math.min(delta, 100) / 1000;
+      const dtReal = delta / 1000;
       for (const f of flotantes) {
         const dur = f.dur || 0.8;
         f.t += dtReal; f.o.y = f.y0 - (f.sube || 22) * f.t;
@@ -1173,7 +1179,7 @@
       if (tUI >= 100) { tUI = 0; refrescarTodo(); }
     }
   };
-  let listo = false, tUI = 0;
+  let listo = false, tUI = 0, tPrevio = 0;
 
   // ───────────────────────── 6. INTERFAZ HTML ─────────────────────────
   // Devuelve true si quedó una torre por ubicar (para permitir arrastrarla)
@@ -1427,7 +1433,8 @@
       nuevaPartida();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
-    $('btnVel').addEventListener('click', () => { G.vel = G.vel === 1 ? 2 : 1; refrescarTodo(); });
+    // Velocidad: ×1 → ×2 → ×3 → ×1
+    $('btnVel').addEventListener('click', () => { G.vel = G.vel >= 3 ? 1 : G.vel + 1; refrescarTodo(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
     // Reiniciar pide un segundo toque para no perder la partida por error
     $('btnReiniciar').addEventListener('click', () => {
