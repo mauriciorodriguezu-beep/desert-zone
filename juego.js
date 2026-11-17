@@ -9,6 +9,186 @@
 (function () {
   'use strict';
 
+  // ───────────────────────── SONIDO Y MÚSICA ─────────────────────────
+  // Todo se genera por código con Web Audio (sin archivos). Los efectos se "pintan" una vez en buffers al
+  // iniciar el audio; la música es un secuenciador que programa notas un poco antes de que suenen.
+  // El navegador solo deja sonar audio después de un toque del jugador: SON.iniciar() se llama en el primer toque.
+  const SON = (() => {
+    let ctx = null, gMaster, gMus, gSfx, capas = {}, bufs = {}, ultimo = {}, ruido = null;
+    const cfg = { musica: true, efectos: true };
+    // Separación mínima (s) entre dos sonidos del mismo tipo, para que 20 torres no saturen
+    const PAUSA = { bala: 0.06, muerte: 0.05, explosion: 0.07, plasma: 0.09, rayo: 0.09, misil: 0.08, hielo: 0.25, mina: 0.08 };
+    const VOL = { bala: 0.22, plasma: 0.35, misil: 0.3, explosion: 0.45, rayo: 0.3, muerte: 0.25, hielo: 0.3, combo: 0.5, berserk: 0.5,
+      fusion: 0.7, jefe: 0.5, oleada: 0.45, limpia: 0.45, vida: 0.5, construir: 0.5, mejorar: 0.4, vender: 0.4, victoria: 0.6, derrota: 0.6, mina: 0.3, grande: 0.7 };
+    const tau = Math.PI * 2, R = () => Math.random() * 2 - 1, saw = ph => 2 * ((ph / tau) % 1) - 1;
+    const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+
+    function pintar(dur, fn) {
+      const sr = ctx.sampleRate, n = Math.floor(sr * dur), b = ctx.createBuffer(1, n, sr), d = b.getChannelData(0);
+      const st = { lp: 0, ph: 0, ph2: 0 };
+      for (let i = 0; i < n; i++) d[i] = Math.max(-1, Math.min(1, fn(i / sr, st, sr)));
+      return b;
+    }
+    function crearEfectos() {
+      bufs.bala = pintar(0.07, (t, s) => { s.lp += (R() - s.lp) * 0.5; return (s.lp * 0.7 + Math.sin(tau * 170 * t) * 0.5) * Math.exp(-t * 65); });
+      bufs.plasma = pintar(0.32, (t, s, sr) => { s.ph += tau * (850 * Math.exp(-t * 7) + 170) / sr; return (Math.sin(s.ph) * 0.8 + Math.sin(s.ph * 2.01) * 0.25) * Math.exp(-t * 7) * Math.min(1, t * 200); });
+      bufs.misil = pintar(0.4, (t, s, sr) => { s.lp += (R() - s.lp) * (0.05 + t * 0.4); s.ph += tau * (260 + 500 * t) / sr; return (s.lp * 1.6 + Math.sin(s.ph) * 0.2) * Math.min(1, t * 25) * Math.exp(-t * 4); });
+      bufs.explosion = pintar(0.8, (t, s, sr) => { s.lp += (R() - s.lp) * 0.07; s.ph += tau * (40 + 70 * Math.exp(-t * 5)) / sr; return (s.lp * 2.6 * Math.exp(-t * 4.5) + Math.sin(s.ph) * 0.9 * Math.exp(-t * 6)); });
+      bufs.grande = pintar(1.6, (t, s, sr) => { s.lp += (R() - s.lp) * 0.05; s.ph += tau * (30 + 60 * Math.exp(-t * 3)) / sr; return (s.lp * 3 * Math.exp(-t * 2.2) + Math.sin(s.ph) * Math.exp(-t * 2.8)); });
+      bufs.mina = pintar(0.45, (t, s, sr) => { s.lp += (R() - s.lp) * 0.12; s.ph += tau * (60 + 90 * Math.exp(-t * 9)) / sr; return (s.lp * 2 * Math.exp(-t * 8) + Math.sin(s.ph) * 0.8 * Math.exp(-t * 9)); });
+      let gate = 1;
+      bufs.rayo = pintar(0.24, (t, s) => { if (Math.random() < 0.02) gate = Math.random() < 0.6 ? 1 : 0.15; return (R() * gate * 0.8 + Math.sin(tau * 2300 * t) * 0.15) * Math.exp(-t * 11); });
+      bufs.muerte = pintar(0.15, (t, s, sr) => { s.ph += tau * (520 - 1400 * t) / sr; return (Math.sign(Math.sin(s.ph)) * 0.35 + R() * 0.25) * Math.exp(-t * 28); });
+      bufs.hielo = pintar(0.55, t => ([1480, 1975, 2637].reduce((a, f, k) => a + Math.sin(tau * f * t) * (k === 0 ? 0.45 : 0.25), 0)) * (0.7 + 0.3 * Math.sin(tau * 18 * t)) * Math.exp(-t * 5) * Math.min(1, t * 80));
+      bufs.combo = pintar(0.6, (t, s, sr) => { const sub = 1 + t * 0.5; return [587, 740, 880].reduce((a, f) => a + Math.sin(tau * f * sub * t) * 0.3, 0) * Math.min(1, t * 60) * Math.exp(-t * 4); });
+      bufs.berserk = pintar(0.75, (t, s, sr) => { s.ph += tau * 110 / sr; s.ph2 += tau * 165 / sr; return Math.tanh(3 * (saw(s.ph) + saw(s.ph2) * 0.8)) * 0.55 * Math.exp(-t * 3.2) * Math.min(1, t * 90); });
+      bufs.fusion = pintar(1.6, (t, s, sr) => {
+        s.lp += (R() - s.lp) * Math.min(0.9, 0.02 + t * 0.5);
+        const riser = t < 1 ? s.lp * t * 1.4 : 0;
+        s.ph += tau * (t < 1 ? 200 + 600 * t : 45 + 80 * Math.exp(-(t - 1) * 6)) / sr;
+        const boom = t >= 1 ? Math.sin(s.ph) * Math.exp(-(t - 1) * 4) + s.lp * 1.5 * Math.exp(-(t - 1) * 5) : Math.sin(s.ph) * 0.15 * t;
+        return riser + boom;
+      });
+      bufs.jefe = pintar(1.4, (t, s, sr) => { s.ph += tau * ((Math.floor(t / 0.3) % 2) ? 330 : 440) / sr; return Math.tanh(2 * Math.sin(s.ph)) * 0.45 * Math.min(1, t * 30) * (t > 1.2 ? (1.4 - t) * 5 : 1); });
+      bufs.oleada = pintar(0.8, (t, s, sr) => [38, 45, 50].reduce((a, n, k) => a + saw(tau * midi(n) * t * (1 + k * 0.002)) * 0.22, 0) * Math.min(1, t * 15) * Math.exp(-t * 2.8));
+      bufs.limpia = pintar(0.5, t => Math.sin(tau * (t < 0.18 ? 880 : 1175) * t) * 0.6 * Math.exp(-((t < 0.18 ? t : t - 0.18)) * 9) * Math.min(1, t * 200));
+      bufs.vida = pintar(0.38, t => Math.sign(Math.sin(tau * 110 * t)) * 0.4 * ((Math.floor(t / 0.09) % 2) ? 0.3 : 1) * Math.exp(-t * 3));
+      bufs.construir = pintar(0.18, (t, s, sr) => { s.ph += tau * (160 - 500 * t) / sr; return Math.sin(s.ph) * 0.8 * Math.exp(-t * 18) + R() * 0.3 * Math.exp(-t * 90); });
+      bufs.mejorar = pintar(0.2, (t, s, sr) => { s.ph += tau * (600 + 3000 * t) / sr; return Math.sin(s.ph) * 0.6 * Math.exp(-t * 14) * Math.min(1, t * 300); });
+      bufs.vender = pintar(0.28, t => Math.sin(tau * (t < 0.1 ? 1050 : 790) * t) * 0.5 * Math.exp(-((t < 0.1 ? t : t - 0.1)) * 14));
+      bufs.victoria = pintar(2.2, t => {
+        const notas = [74, 78, 81, 86], i = Math.min(3, Math.floor(t / 0.18));
+        let v = 0;
+        for (let k = 0; k <= i; k++) v += Math.sin(tau * midi(notas[k]) * t) * 0.18 * Math.exp(-(t - k * 0.18) * (k === 3 ? 1.2 : 2.5));
+        return v * Math.min(1, t * 100);
+      });
+      bufs.derrota = pintar(2.2, t => { const notas = [62, 60, 58, 57], i = Math.min(3, Math.floor(t / 0.42)); return (Math.sin(tau * midi(notas[i]) * t) * 0.4 + saw(tau * midi(notas[i] - 12) * t) * 0.12) * Math.exp(-(t - i * 0.42) * 1.8) * (t > 1.9 ? (2.2 - t) * 3.3 : 1); });
+      ruido = pintar(0.25, () => R());
+    }
+
+    function iniciar() {
+      if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try { ctx = new AC(); } catch (e) { return; }
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -14; comp.ratio.value = 4;
+      gMaster = ctx.createGain(); gMaster.gain.value = 0.75;
+      gMaster.connect(comp); comp.connect(ctx.destination);
+      gMus = ctx.createGain(); gMus.connect(gMaster);
+      gSfx = ctx.createGain(); gSfx.connect(gMaster);
+      for (const k of ['pad', 'bajo', 'arp', 'bateria']) { capas[k] = ctx.createGain(); capas[k].gain.value = 0; capas[k].connect(gMus); }
+      filtroPad = ctx.createBiquadFilter(); filtroPad.type = 'lowpass'; filtroPad.frequency.value = 900; filtroPad.connect(capas.pad);
+      crearEfectos();
+      aplicarCfg();
+      siguientePaso = ctx.currentTime + 0.1;
+      fijarIntensidad(0);
+      setInterval(programar, 60);
+    }
+    function aplicarCfg() {
+      if (!ctx) return;
+      gMus.gain.setTargetAtTime(cfg.musica ? 0.32 : 0, ctx.currentTime, 0.15);
+      gSfx.gain.setTargetAtTime(cfg.efectos ? 0.6 : 0, ctx.currentTime, 0.05);
+    }
+    function sfx(nombre, vol) {
+      if (!ctx || !cfg.efectos || !bufs[nombre] || ctx.state !== 'running') return;
+      const ahora = ctx.currentTime;
+      if (PAUSA[nombre] && ahora - (ultimo[nombre] || 0) < PAUSA[nombre]) return;
+      ultimo[nombre] = ahora;
+      const src = ctx.createBufferSource(), g = ctx.createGain();
+      src.buffer = bufs[nombre];
+      src.playbackRate.value = 0.92 + Math.random() * 0.16;   // un poco de variación
+      g.gain.value = (VOL[nombre] || 0.4) * (vol == null ? 1 : vol);
+      src.connect(g); g.connect(gSfx);
+      src.start();
+    }
+
+    // ── Música: re menor, Dm – Bb – F – C (dos compases cada acorde), 92 pulsos por minuto ──
+    let filtroPad = null, siguientePaso = 0, paso = 0, intensidad = -1, zumbido = null;   // -1: aún sin mezcla
+    const SEMI = 60 / 92 / 4;   // duración de una semicorchea
+    const ACORDES = [
+      { bajo: 38, pad: [62, 65, 69] }, { bajo: 34, pad: [58, 62, 65] },
+      { bajo: 41, pad: [60, 65, 69] }, { bajo: 36, pad: [60, 64, 67] }
+    ];
+    // Volumen de cada capa según la intensidad: 0 menú, 1 entre oleadas, 2 combate, 3 jefe
+    const MEZCLA = [
+      { pad: 0.85, bajo: 0.12, arp: 0.16, bateria: 0 },
+      { pad: 0.6, bajo: 0.25, arp: 0.18, bateria: 0 },
+      { pad: 0.32, bajo: 0.38, arp: 0.22, bateria: 0.38 },
+      { pad: 0.28, bajo: 0.48, arp: 0.28, bateria: 0.5 }
+    ];
+    function fijarIntensidad(n) {
+      if (!ctx || n === intensidad) return;
+      intensidad = n;
+      const m = MEZCLA[n];
+      for (const k in m) capas[k].gain.setTargetAtTime(m[k], ctx.currentTime, 1.2);
+      filtroPad.frequency.setTargetAtTime(n >= 2 ? 1500 : 800, ctx.currentTime, 1.5);
+    }
+    function nota(destino, tipo, freq, t, dur, vol, ataque) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = tipo; o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + (ataque || 0.01));
+      g.gain.setTargetAtTime(0, t + dur * 0.6, dur * 0.25);
+      o.connect(g); g.connect(destino);
+      o.start(t); o.stop(t + dur + 0.6);
+    }
+    function golpe(t, vol, tipo) {
+      if (tipo === 'bombo') {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+        g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        o.connect(g); g.connect(capas.bateria); o.start(t); o.stop(t + 0.3);
+        return;
+      }
+      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = ruido; f.type = tipo === 'caja' ? 'bandpass' : 'highpass'; f.frequency.value = tipo === 'caja' ? 1800 : 7000;
+      const dur = tipo === 'caja' ? 0.16 : 0.05;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      src.connect(f); f.connect(g); g.connect(capas.bateria); src.start(t); src.stop(t + dur + 0.02);
+    }
+    function programar() {
+      if (!ctx || ctx.state !== 'running') return;
+      const m = MEZCLA[Math.max(0, intensidad)];
+      while (siguientePaso < ctx.currentTime + 0.25) {
+        const t = siguientePaso, s = paso % 16, ac = ACORDES[Math.floor(paso / 32) % 4];
+        if (cfg.musica) {
+          if (paso % 32 === 0) for (const n of ac.pad) {   // colchón: dos sierras desafinadas por nota
+            nota(filtroPad, 'sawtooth', midi(n), t, SEMI * 32, 0.09, 0.8);
+            nota(filtroPad, 'sawtooth', midi(n) * 1.004, t, SEMI * 32, 0.09, 0.8);
+          }
+          if (m.bajo > 0.01 && s % 2 === 0) nota(capas.bajo, 'triangle', midi(ac.bajo + (s === 6 || s === 14 ? 12 : 0)), t, SEMI * 1.6, 0.5);
+          const patron = [0, 1, 2, 1, 2, 0, 1, 2], arpOn = intensidad === 0 ? s % 4 === 0 : true;
+          if (m.arp > 0.01 && arpOn) nota(capas.arp, 'square', midi(ac.pad[patron[s % 8]] + 12), t, SEMI * 0.9, 0.12);
+          if (m.bateria > 0.01) {
+            if (s === 0 || s === 8 || (intensidad === 3 && (s === 4 || s === 12)) || s === 10) golpe(t, 0.9, 'bombo');
+            if (s === 4 || s === 12) golpe(t, 0.5, 'caja');
+            if (s % 2 === 0 || intensidad === 3) golpe(t, s % 4 === 2 ? 0.25 : 0.15, 'platillo');
+          }
+        }
+        paso++;
+        siguientePaso += SEMI;
+      }
+    }
+
+    // Zumbido continuo mientras haya algún láser disparando
+    function laser(activo) {
+      if (!ctx) return;
+      if (!zumbido) {
+        const o = ctx.createOscillator(), o2 = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+        o.type = 'sawtooth'; o.frequency.value = 98; o2.type = 'sawtooth'; o2.frequency.value = 196.8;
+        f.type = 'lowpass'; f.frequency.value = 1200; g.gain.value = 0;
+        o.connect(f); o2.connect(f); f.connect(g); g.connect(gSfx);
+        o.start(); o2.start();
+        zumbido = g;
+      }
+      zumbido.gain.setTargetAtTime(activo && cfg.efectos ? 0.06 : 0, ctx.currentTime, 0.08);
+    }
+    function suspender(si) { if (ctx) { if (si) ctx.suspend(); else ctx.resume(); } }
+    return { cfg, iniciar, aplicarCfg, sfx, fijarIntensidad, laser, suspender, activo: () => !!ctx };
+  })();
+
+
   // ───────────────────────── 1. PREPARACIÓN ─────────────────────────
   const D = DATOS;
   const C = D.celda, W = D.cols * C, H = D.filas * C;
@@ -315,6 +495,7 @@
     const f = en.sg, def = D.torres[f.torre];
     if (!en.trio || !listoFusion(en) || G.creditos < def.costo || en.torres.some(t => !G.torres.includes(t))) return false;
     G.creditos -= def.costo;
+    SON.sfx('fusion');
     const x = Math.round(en.torres.reduce((s, t) => s + t.x, 0) / 3), y = Math.round(en.torres.reduce((s, t) => s + t.y, 0) / 3);
     for (const t of en.torres) {
       G.torres.splice(G.torres.indexOf(t), 1);
@@ -357,6 +538,7 @@
     if (!def || !puedeConstruir(x, y) || G.creditos < def.costo) return null;
     if (def.combo && !desbloqueada(tipo)) return null;
     G.creditos -= def.costo;
+    SON.sfx('construir');
     const t = {
       tipo, x, y,
       niv: {}, nivel: 0, invertido: def.costo, prioridad: 'primero',
@@ -381,6 +563,7 @@
     const m = mejoraSiguiente(t, id);
     if (!m || G.creditos < m.costo) return false;
     G.creditos -= m.costo;
+    SON.sfx('mejorar');
     t.invertido += m.costo;
     t.niv[id] = (t.niv[id] || 0) + 1;
     const antes = t.berserk;
@@ -402,6 +585,7 @@
     const i = G.torres.indexOf(t);
     if (i < 0) return false;
     G.creditos += valorVenta(t);
+    SON.sfx('vender');
     G.torres.splice(i, 1);
     G.minas = G.minas.filter(m => m.torre !== t);   // sus minas se retiran con ella
     if (G.torreSel === t) G.torreSel = null;
@@ -420,6 +604,7 @@
     G.moviendo = null;
     if (!ok) return false;
     G.creditos -= p;
+    SON.sfx('construir');
     t.x = x; t.y = y; t.pm = null;   // la minadora vuelve a calcular dónde sembrar
     recalcularSinergias();
     aviso(D.torres[t.tipo].nombre + ' movida · −' + cr(p) + 'cr');
@@ -527,6 +712,7 @@
     G.pendientes[G.oleada] = cola.length;
     G.generando = true;
     G.enCuenta = false; G.cuenta = 0;
+    SON.sfx(oleadaConJefe(G.oleada) ? 'jefe' : 'oleada');
     if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de TERMINUS se acerca!' : '¡Un Coloso se acerca!');
     return true;
   }
@@ -549,6 +735,7 @@
       const extra = G.bonoPend[e.oleada] || 0;
       const bono = D.oleada.bonoBase + D.oleada.bonoPorOleada * e.oleada + extra;
       G.creditos += bono;
+      SON.sfx('limpia');
       delete G.bonoPend[e.oleada];
       aviso('Oleada ' + e.oleada + ' superada · +' + bono + 'cr' + (extra ? ' (incluye ' + extra + ' por adelantar)' : ''));
       guardar();
@@ -562,6 +749,7 @@
       G.creditos += e.def.premio;
       G.bajas++;
       G.guardado.bajasTotales++;
+      SON.sfx(e.def.jefe ? 'grande' : e.tipo === 'blindado' || e.tipo === 'dron' ? 'explosion' : 'muerte', e.def.jefe || e.tipo === 'blindado' || e.tipo === 'dron' ? 0.6 : 1);
       if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡' + e.def.nombre + ' destruido! +' + e.def.premio + 'cr'); }
       else G.efectos.push(e.tipo === 'blindado' || e.tipo === 'dron' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
       flotar(e.x, e.y - 10, '+' + e.def.premio);
@@ -727,6 +915,7 @@
 
   // Ataque berserk de una torre con todas sus mejoras. Devuelve false si no tiene a quién disparar.
   function lanzarBerserk(t) {
+    SON.sfx('berserk');
     const b = D.torres[t.tipo].berserk, s = t.s, r2 = s.alcance * s.alcance;
     const crio = t.tipo === 'crio';
     const aTiro = () => G.enemigos.filter(e => e.vivo && !(e.def.aereo && (crio || !s.antiaerea)) && (e.x - t.x) * (e.x - t.x) + (e.y - t.y) * (e.y - t.y) <= r2)
@@ -839,6 +1028,7 @@
             if (dx * dx + dy * dy <= r2 && !e.def.noCongela) e.congelado = s.congela;
           }
           G.efectos.push({ k: 'anillo', x: t.x, y: t.y, r: s.alcance, t: 0, dur: 0.45 });
+          SON.sfx('hielo');
         }
       }
     }
@@ -850,6 +1040,7 @@
       if (e.dist >= largoDe(e)) {
         const quita = e.def.vidas || 1;
         G.vidas -= quita;
+        SON.sfx('vida');
         aviso(e.def.jefe ? '¡El ' + e.def.nombre + ' llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
         resolverEnemigo(e);
         continue;
@@ -873,6 +1064,7 @@
           danar(e, m.dano, m.torre);
         }
         G.efectos.push({ k: 'explosion', x: m.x, y: m.y, t: 0, dur: 0.4, e: m.radio / 22 });
+        SON.sfx('mina');
       }
       G.minas = G.minas.filter(m => !m.fin);
     }
@@ -949,6 +1141,7 @@
       if (s.arma === 'bala') {
         // Impacto inmediato (el cañón rotativo reparte el disparo entre varios objetivos)
         const objs = s.objetivos > 1 ? [e, ...otrosObjetivos(t, e, s.objetivos - 1)] : [e];
+        SON.sfx('bala');
         for (const o of objs) {
           G.efectos.push({ k: 'traza', x1: t.x, y1: t.y, x2: o.x, y2: o.y, t: 0, dur: 0.07, h: (o.lento > 0 || o.congelado > 0) && bonoALentos(t) > 1 });
           danar(o, s.dano, t);
@@ -956,6 +1149,7 @@
       } else if (s.arma === 'plasma') {
         t.tiros = (t.tiros || 0) + 1;
         const critico = !!s.critCada && t.tiros % s.critCada === 0;
+        SON.sfx('plasma');
         G.proyectiles.push({ k: 'plasma', x: t.x, y: t.y, tx: e.x, ty: e.y, obj: e, vel: s.velProyectil, dano: s.dano * (critico ? s.critMult : 1), onda: s.onda || 0, critico, torre: t, espera: 0, congela: s.congelaImpacto || 0 });
       } else if (s.arma === 'rayo') {
         const lista = cadena(e, s.saltos, s.radioSalto, s.antiaerea);
@@ -966,7 +1160,9 @@
           f *= s.caida;
         }
         efectoCadena(t.x, t.y, lista, 0xfff07a);
+        SON.sfx('rayo');
       } else if (s.arma === 'misil') {
+        SON.sfx('misil');
         for (let i = 0; i < (s.salva || 1); i++) {
           const o = i === 0 || !(s.salva > 2) ? e : (otrosObjetivos(t, e, s.salva - 1)[i - 1] || e);   // salvas grandes reparten objetivos
           G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: o.x, ty: o.y, obj: o, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i % 2 ? 1 : -1, multAire: s.multAire || 1, saltos: s.saltosImpacto || 0, congela: s.congelaImpacto || 0, minas: s.minasImpacto || 0 });
@@ -1007,6 +1203,7 @@
           danar(e, p.dano * (e.def.aereo ? (p.multAire || 1) : 1), p.torre);
         }
         G.efectos.push({ k: 'explosion', x: p.x, y: p.y, t: 0, dur: 0.4, e: p.radio / 20 });
+        SON.sfx('explosion');
         if (p.congela) {
           // Bombardero criogénico: congela todo lo de tierra en el radio (jefes no)
           for (const e of G.enemigos) {
@@ -1042,7 +1239,7 @@
       // Los tríos no reparten carga; los combos de 2 sí (una torre con varias vecinas carga cada uno más lento)
       en.carga += dt / (en.sg.combo.cargaSeg * (en.trio ? 1 : Math.max(en.a.nEnl, en.b.nEnl)));
       if (en.carga >= 1) {
-        if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; }
+        if (lanzarCombo(en)) { en.carga = 0; en.tDisparo = G.t; SON.sfx('combo'); }
         else en.carga = 1;
       }
     }
@@ -1076,6 +1273,7 @@
   let esRecord = false;
   function terminar(resultado) {
     G.fase = resultado;
+    SON.sfx(resultado === 'victoria' ? 'victoria' : 'derrota');
     borrarPartida();
     esRecord = false;
     if (resultado === 'victoria') {
@@ -2053,6 +2251,12 @@
       }
       flotantes = flotantes.filter(f => { if (f.t >= (f.dur || 0.8)) { f.o.destroy(); return false; } return true; });
       dibujar();
+      // Música según la situación y zumbido de los láser
+      if (SON.activo()) {
+        const hayJefe = G.enemigos.some(e => e.def.jefe && e.vivo);
+        SON.fijarIntensidad(G.fase !== 'jugando' ? 0 : G.pausa ? 1 : hayJefe ? 3 : (G.enemigos.length || G.generando) ? 2 : 1);
+        SON.laser(G.fase === 'jugando' && !G.pausa && G.torres.some(t => t.haz && t.activa));
+      }
       tUI += delta;
       if (tUI >= 100) { tUI = 0; refrescarTodo(); }
     }
@@ -2391,6 +2595,25 @@
     if (!G.guardado.historiaVista) { G.guardado.historiaVista = true; guardar(); }
     if (histAl) { const f = histAl; histAl = null; f(); }
   }
+  // Preferencias de sonido: se guardan con el resto de los datos del jugador
+  function guardarSonido() {
+    G.guardado.sonido = { musica: SON.cfg.musica, efectos: SON.cfg.efectos };
+    guardar();
+    SON.aplicarCfg();
+    pintarSonido();
+  }
+  function pintarSonido() {
+    const algo = SON.cfg.musica || SON.cfg.efectos;
+    poner($('btnSonido'), 'innerHTML', algo
+      ? '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h3l4-3v10l-4-3H3z" fill="currentColor"/><path d="M13 7.5a3.5 3.5 0 010 5M15.2 5.3a6.5 6.5 0 010 9.4"/></svg>'
+      : '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8h3l4-3v10l-4-3H3z" fill="currentColor"/><path d="M13 8l4 4M17 8l-4 4"/></svg>');
+    $('btnSonido').classList.toggle('activo', !algo);
+    poner($('veloMusica'), 'textContent', 'Música: ' + (SON.cfg.musica ? 'sí' : 'no'));
+    poner($('veloEfectos'), 'textContent', 'Efectos: ' + (SON.cfg.efectos ? 'sí' : 'no'));
+    $('veloMusica').classList.toggle('off', !SON.cfg.musica);
+    $('veloEfectos').classList.toggle('off', !SON.cfg.efectos);
+  }
+
   // Línea de historia bajo los selectores: la del escenario elegido (o la del modo infinito)
   function pintarLore() {
     const m = D.mapas[mapaElegido] || MAPA;
@@ -2448,6 +2671,7 @@
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
       '<h3>Zoom</h3><p>Pellizca el mapa con dos dedos (o usa la rueda del mouse, o los botones <b>+</b> y <b>−</b> a la derecha) para acercarte. Con zoom, arrastra un dedo para moverte por el mapa. Al construir o mover una torre, arrastrar acomoda la torre y no el mapa.</p>' +
+      '<h3>Sonido</h3><p>El botón del parlante, en la barra de arriba, silencia o activa todo. En la pantalla de inicio puedes apagar por separado la <b>música</b> o los <b>efectos</b>. La música se intensifica durante el combate y cuando hay un jefe.</p>' +
       '<h3>Controles</h3><p>En pausa, <b>⌂ Inicio</b> vuelve a la pantalla de inicio; la partida queda guardada desde la última oleada limpiada y se retoma con <b>Continuar</b>. <b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
   }
 
@@ -2627,6 +2851,17 @@
     $('btnManual').addEventListener('click', () => abrirManual());
     $('veloManual').addEventListener('click', () => abrirManual());
     $('veloHistoria').addEventListener('click', () => abrirHistoria());
+    // Sonido: el audio arranca con el primer toque (regla de los navegadores)
+    const arrancarAudio = () => { SON.iniciar(); };
+    document.addEventListener('pointerdown', arrancarAudio, true);
+    document.addEventListener('keydown', arrancarAudio, true);
+    $('btnSonido').addEventListener('click', () => {
+      const algo = SON.cfg.musica || SON.cfg.efectos;
+      SON.cfg.musica = SON.cfg.efectos = !algo;
+      guardarSonido();
+    });
+    $('veloMusica').addEventListener('click', () => { SON.cfg.musica = !SON.cfg.musica; guardarSonido(); });
+    $('veloEfectos').addEventListener('click', () => { SON.cfg.efectos = !SON.cfg.efectos; guardarSonido(); });
     $('historiaSaltar').addEventListener('click', cerrarHistoria);
     $('historiaSig').addEventListener('click', () => {
       const el = $('historiaTexto'), txt = D.historia[histI];
@@ -2703,6 +2938,7 @@
     // Si la app pasa a segundo plano, se pausa sola
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && G.fase === 'jugando') { G.pausa = true; refrescarTodo(); }
+      SON.suspender(document.hidden);
     });
   }
 
@@ -2712,8 +2948,10 @@
   $('veloCredito').textContent = 'Creado por ' + D.autor + ' · Versión ' + D.version;
   modo = G.guardado.modo === 'infinito' ? 'infinito' : 'campana';
   cargarMapa(mapaAbierto(G.guardado.mapa) ? G.guardado.mapa : Object.keys(D.mapas)[0]);
+  if (G.guardado.sonido) { SON.cfg.musica = G.guardado.sonido.musica !== false; SON.cfg.efectos = G.guardado.sonido.efectos !== false; }
   armarBotonesTorre();
   conectarBotones();
+  pintarSonido();
   mostrarMenu();
   abrirHistoria();   // cada vez que se abre el juego, la historia antes del menú (se puede saltar)
   new Phaser.Game({
