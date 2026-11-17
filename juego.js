@@ -1406,8 +1406,33 @@
       suelo: 0x4f7a34, claro: 0x6b9a45, oscuro: 0x35592a, ondas: false, hojas: true,
       grano: [0x2a4a1c, 0x8fbf5a], ruta: 0x7a5a36, rutaBorde: 0x553d22, huella: 0x4a331c, rutaGrano: [0x3a2814, 0x9a7a4e],
       roca: 0x5f6a55, rocaLuz: 0x8a9a6e, mata: [0x2f5a1f, 0x8fc456], texto: '#eef7dc', polvo: [0x8a6a42, 0x5f7f3a]
+    },
+    ciudad: {
+      suelo: 0x948f85, claro: 0xaba69a, oscuro: 0x757067, ondas: false, ciudad: true,
+      grano: [0x4a463f, 0xd6d1c4], ruta: 0x6b6d71, rutaBorde: 0xb9b6ad, huella: 0x606266, rutaGrano: [0x34363a, 0x8d8f93],
+      roca: 0x80796d, rocaLuz: 0xb8b2a4, mata: [0x5c6b3a, 0x7f8c4a], texto: '#2a2723', polvo: [0xcfc9bc, 0x7a746a]
     }
   };
+
+  // Celdas donde el camino se cruza consigo mismo (tramos no consecutivos que pasan por la misma celda)
+  function celdasCruce() {
+    const out = [];
+    for (const cam of (MAPA.caminos || [MAPA.camino])) {
+      const vistos = {};
+      for (let i = 0; i < cam.length - 1; i++) {
+        let [c, r] = cam[i];
+        const [c2, r2] = cam[i + 1], dc = Math.sign(c2 - c), dr = Math.sign(r2 - r);
+        for (;;) {
+          const k = c + ',' + r;
+          if (vistos[k] != null && i - vistos[k] > 1) out.push([c, r]);
+          if (vistos[k] == null) vistos[k] = i;
+          if (c === c2 && r === r2) break;
+          c += dc; r += dr;
+        }
+      }
+    }
+    return out;
+  }
 
   function dibujarFondo(g) {
     const r = azar(20261111 + mapaId.length * 97), T = TM;
@@ -1428,6 +1453,44 @@
         const x = r() * W, y = r() * H, a = r() * Math.PI * 2, l = 7 + r() * 9;
         poli(g, x, y, a, [[0, 0], [l * 0.5, -l * 0.28], [l, 0], [l * 0.5, l * 0.28]], r() < 0.5 ? 0x3d6b2a : 0x6fa042, 0.75);
         g.lineStyle(0.8, 0x2a4a1c, 0.6).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
+      }
+    }
+    // Ciudad: losas de edificios derrumbados (planas, para que las torres se puedan poner encima)
+    if (T.ciudad) {
+      const libre = (c, f) => c >= 0 && f >= 0 && c < D.cols && f < D.filas && !CAMINO.has(c + ',' + f);
+      let puestos = 0;
+      const ocup = new Set();
+      for (let k = 0; k < 80 && puestos < 6; k++) {
+        const c = Math.floor(r() * (D.cols - 1)), f = Math.floor(r() * (D.filas - 1)), w = 2 + (r() < 0.4 ? 1 : 0), h = 2;
+        let ok = true;
+        for (let i = 0; i < w && ok; i++) for (let j = 0; j < h && ok; j++) if (!libre(c + i, f + j)) ok = false;
+        for (let i = -1; i <= w && ok; i++) for (let j = -1; j <= h && ok; j++) if (ocup.has((c + i) + ',' + (f + j))) ok = false;   // separadas entre sí
+        if (!ok) continue;
+        for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) ocup.add((c + i) + ',' + (f + j));
+        puestos++;
+        const x = c * C + 5, y = f * C + 5, ww = w * C - 10, hh = h * C - 10;
+        g.fillStyle(COL.sombra, 0.18).fillRect(x + 3, y + 3, ww, hh);
+        g.fillStyle(0xa29d92, 1).fillRect(x, y, ww, hh);
+        // baldosas del piso
+        g.lineStyle(0.6, 0x7d786e, 0.45);
+        for (let gx = x + 9; gx < x + ww; gx += 9) g.lineBetween(gx, y, gx, y + hh);
+        for (let gy = y + 9; gy < y + hh; gy += 9) g.lineBetween(x, gy, x + ww, gy);
+        // muros rotos: tramos del contorno con huecos
+        g.lineStyle(3, 0x5f5a52, 1);
+        const lados = [[x, y, x + ww, y], [x + ww, y, x + ww, y + hh], [x + ww, y + hh, x, y + hh], [x, y + hh, x, y]];
+        for (const [x1, y1, x2, y2] of lados) {
+          let t0 = 0;
+          while (t0 < 1) {
+            const t1 = Math.min(1, t0 + 0.2 + r() * 0.45);
+            if (r() < 0.7) g.lineBetween(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0, x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1);
+            t0 = t1 + 0.08 + r() * 0.12;
+          }
+        }
+        // escombros en una esquina
+        for (let q = 0; q < 6; q++) {
+          const ex = x + (r() < 0.5 ? 6 : ww - 6) + (r() - 0.5) * 10, ey = y + (r() < 0.5 ? 6 : hh - 6) + (r() - 0.5) * 10, t = 2 + r() * 3;
+          poli(g, ex, ey, r() * 6, [[-t, -t * 0.6], [t, -t * 0.8], [t * 0.8, t * 0.7], [-t * 0.9, t * 0.5]], r() < 0.5 ? T.roca : T.rocaLuz, 1);
+        }
       }
     }
     // Ondas de duna o de nieve
@@ -1451,12 +1514,43 @@
     bandaCamino(g, ANCHO_CAMINO + 5, T.oscuro, 0.55);
     bandaCamino(g, ANCHO_CAMINO, T.rutaBorde, 1);
     bandaCamino(g, ANCHO_CAMINO - 3, T.ruta, 1);
-    bandaCamino(g, 14, T.huella, 0.55);
-    bandaCamino(g, 7, T.ruta, 1);
+    if (!T.ciudad) {
+      bandaCamino(g, 14, T.huella, 0.55);
+      bandaCamino(g, 7, T.ruta, 1);
+    }
     for (let ri = 0; ri < RUTAS.length; ri++) for (let d = 0; d < RUTAS[ri].largo; d += 3) {
       const p = posEn(d, ri);
       g.fillStyle(T.rutaGrano[r() < 0.5 ? 0 : 1], 0.25)
         .fillRect(p.x + (r() - 0.5) * (ANCHO_CAMINO - 4), p.y + (r() - 0.5) * (ANCHO_CAMINO - 4), 1.5, 1.5);
+    }
+
+    // Ciudad: línea amarilla discontinua al centro de la calle y cruce marcado con franjas
+    if (T.ciudad) {
+      const cruces = celdasCruce().map(([c, f]) => ({ x: c * C + C / 2, y: f * C + C / 2 }));
+      const cerca = (x, y, d) => cruces.some(q => Math.abs(q.x - x) < d && Math.abs(q.y - y) < d);
+      for (const R of RUTAS) R.tramos.forEach((t, i) => {
+        const ux = (t.b.x - t.a.x) / t.l, uy = (t.b.y - t.a.y) / t.l;
+        const d0 = i === 0 ? 0 : ANCHO_CAMINO / 2 + 2, d1 = i === R.tramos.length - 1 ? t.l : t.l - ANCHO_CAMINO / 2 - 2;
+        g.lineStyle(1.6, 0xe0b43a, 0.85);
+        for (let d = d0; d + 6 <= d1; d += 11) {
+          const x1 = t.a.x + ux * d, y1 = t.a.y + uy * d;
+          if (cerca(x1, y1, ANCHO_CAMINO / 2 + 6)) continue;
+          g.lineBetween(x1, y1, x1 + ux * 6, y1 + uy * 6);
+        }
+      });
+      for (const q of cruces) {
+        const m = ANCHO_CAMINO / 2;
+        g.lineStyle(1.4, 0xe0b43a, 0.75).strokeRect(q.x - m + 2, q.y - m + 2, ANCHO_CAMINO - 4, ANCHO_CAMINO - 4);
+        g.lineStyle(1.2, 0xe0b43a, 0.6);
+        g.lineBetween(q.x - m + 2, q.y - m + 2, q.x + m - 2, q.y + m - 2);
+        g.lineBetween(q.x + m - 2, q.y - m + 2, q.x - m + 2, q.y + m - 2);
+        // pasos de cebra a la salida de cada brazo del cruce
+        g.fillStyle(0xe8e4da, 0.7);
+        for (let k = -2; k <= 2; k++) {
+          g.fillRect(q.x + k * 4 - 1, q.y - m - 7, 2, 5); g.fillRect(q.x + k * 4 - 1, q.y + m + 2, 2, 5);
+          g.fillRect(q.x - m - 7, q.y + k * 4 - 1, 5, 2); g.fillRect(q.x + m + 2, q.y + k * 4 - 1, 5, 2);
+        }
+      }
     }
 
     // Rocas y matorrales (o esquirlas de hielo) repartidos fuera del camino
@@ -1467,6 +1561,34 @@
         if (v > 0.34) continue;
         const ex = r() < 0.5 ? 6 : C - 6, ey = r() < 0.5 ? 6 : C - 6;
         const x = c * C + ex, y = f * C + ey;
+        if (T.ciudad) {
+          if (v < 0.09) {
+            // auto quemado
+            const hz = r() < 0.5, cw = hz ? 15 : 8, ch = hz ? 8 : 15, cx = c * C + C / 2 + (r() - 0.5) * 12, cy = f * C + C / 2 + (r() - 0.5) * 12;
+            g.fillStyle(COL.sombra, 0.25).fillRoundedRect(cx - cw / 2 + 1.5, cy - ch / 2 + 2, cw, ch, 2);
+            g.fillStyle(0x4a3f38, 1).fillRoundedRect(cx - cw / 2, cy - ch / 2, cw, ch, 2);
+            g.fillStyle(0x7a4a2a, 0.9).fillRect(cx - cw / 2 + 2, cy - ch / 2 + 2, cw - 4, ch - 4);
+            g.fillStyle(0x2a2522, 1).fillRect(hz ? cx - 2 : cx - cw / 2 + 2, hz ? cy - ch / 2 + 2 : cy - 2, hz ? 4 : cw - 4, hz ? ch - 4 : 4);
+          } else if (v < 0.2) {
+            const n = 2 + Math.floor(r() * 3);
+            for (let k = 0; k < n; k++) {
+              const rx = x + (r() - 0.5) * 9, ry = y + (r() - 0.5) * 9, t = 1.8 + r() * 2.6;
+              g.fillStyle(COL.sombra, 0.2).fillEllipse(rx + 1.2, ry + 1.6, t * 2.2, t * 1.4);
+              poli(g, rx, ry, r() * 6, [[-t, -t * 0.6], [t, -t * 0.8], [t * 0.8, t * 0.7], [-t * 0.9, t * 0.5]], r() < 0.5 ? T.roca : T.rocaLuz, 1);
+            }
+          } else if (v < 0.28) {
+            // grieta en el pavimento
+            g.lineStyle(1, 0x55514a, 0.7);
+            let px = x, py = y;
+            for (let k = 0; k < 4; k++) { const nx = px + (r() - 0.3) * 9, ny = py + (r() - 0.5) * 9; g.lineBetween(px, py, nx, ny); px = nx; py = ny; }
+          } else {
+            for (let k = 0; k < 5; k++) {
+              const a = -Math.PI / 2 + (r() - 0.5) * 2, l = 2 + r() * 3.5;
+              g.lineStyle(1.1, T.mata[r() < 0.5 ? 0 : 1], 0.9).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
+            }
+          }
+          continue;
+        }
         if (v < 0.2) {
           const n = 1 + Math.floor(r() * 3);
           for (let k = 0; k < n; k++) {
@@ -2572,7 +2694,7 @@
       b.disabled = !abierto;
       const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
         : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
-      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + (m.caminos ? ' · ' + m.caminos.length + ' entradas' : '') + '</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
+      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + (m.caminos ? ' · ' + m.caminos.length + ' entradas' : '') + (m.rasgo ? ' · ' + m.rasgo : '') + '</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
       b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); pintarLore(); });
       cont.appendChild(b);
     }

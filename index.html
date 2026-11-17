@@ -208,6 +208,7 @@
   #veloCredito { position: absolute; left: 0; right: 0; bottom: 18px; margin: 0; font-size: 12px; color: var(--tenue); }
   #veloSub { font-size: 13px; color: var(--tenue); margin: 0; }
   #veloMapas, #veloModos { display: flex; gap: 8px; width: 100%; max-width: 340px; }
+  #veloMapas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mapaBtn {
     flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 6px;
     border-radius: 10px; border: 1px solid var(--linea); background: var(--caja);
@@ -329,8 +330,8 @@
   })();
 </script>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.18.0"></script>
-<script src="juego.js?v=0.18.0"></script>
+<script src="datos.js?v=0.19.0"></script>
+<script src="juego.js?v=0.19.0"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
