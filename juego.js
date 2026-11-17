@@ -428,11 +428,15 @@
     return mejor;
   }
   // ¿Cabe una torre con centro en (x, y)? No puede salirse del campo, pisar el camino, la base ni otra torre
+  // La base va en el borde derecho, salvo que el camino termine dentro del mapa (espiral): ahí es un búnker redondo
+  const RADIO_BASE = 26;
+  const baseCentral = () => { const f = PUNTOS[PUNTOS.length - 1]; return f.x < W - C && f.x > C && f.y > C && f.y < H - C; };
   function puedeConstruir(x, y) {
     if (x < MEDIA || y < MEDIA || x > W - MEDIA || y > H - MEDIA) return false;
     for (const t of TODOS) if (distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < COLOC.claroCamino) return false;
     const fin = PUNTOS[PUNTOS.length - 1];
-    if (x > W - 24 - MEDIA && Math.abs(y - fin.y) < 24 + MEDIA) return false;
+    if (baseCentral()) { if (Math.hypot(x - fin.x, y - fin.y) < RADIO_BASE + MEDIA) return false; }
+    else if (x > W - 24 - MEDIA && Math.abs(y - fin.y) < 24 + MEDIA) return false;
     for (const t of G.torres) if (t !== G.moviendo && Math.abs(x - t.x) < COLOC.tamTorre && Math.abs(y - t.y) < COLOC.tamTorre) return false;
     return true;
   }
@@ -1407,6 +1411,11 @@
       grano: [0x2a4a1c, 0x8fbf5a], ruta: 0x7a5a36, rutaBorde: 0x553d22, huella: 0x4a331c, rutaGrano: [0x3a2814, 0x9a7a4e],
       roca: 0x5f6a55, rocaLuz: 0x8a9a6e, mata: [0x2f5a1f, 0x8fc456], texto: '#eef7dc', polvo: [0x8a6a42, 0x5f7f3a]
     },
+    terminus: {
+      suelo: 0x1c2230, claro: 0x283044, oscuro: 0x10141e, ondas: false, terminus: true,
+      grano: [0x0a0d14, 0x3a4660], ruta: 0x5d6678, rutaBorde: 0x38d6e8, huella: 0x4f586a, rutaGrano: [0x3a4252, 0x7c879b],
+      roca: 0x3a4255, rocaLuz: 0x6a7690, mata: [0x38d6e8, 0xff4a5a], texto: '#9fe9f5', polvo: [0x6a7690, 0x2a3244]
+    },
     ciudad: {
       suelo: 0x948f85, claro: 0xaba69a, oscuro: 0x757067, ondas: false, ciudad: true,
       grano: [0x4a463f, 0xd6d1c4], ruta: 0x6b6d71, rutaBorde: 0xb9b6ad, huella: 0x606266, rutaGrano: [0x34363a, 0x8d8f93],
@@ -1453,6 +1462,25 @@
         const x = r() * W, y = r() * H, a = r() * Math.PI * 2, l = 7 + r() * 9;
         poli(g, x, y, a, [[0, 0], [l * 0.5, -l * 0.28], [l, 0], [l * 0.5, l * 0.28]], r() < 0.5 ? 0x3d6b2a : 0x6fa042, 0.75);
         g.lineStyle(0.8, 0x2a4a1c, 0.6).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
+      }
+    }
+    // Núcleo de TERMINUS: paneles de piso y pistas de circuito que brillan
+    if (T.terminus) {
+      g.lineStyle(1, 0x2c3650, 0.9);
+      for (let x = 0; x <= W; x += C) g.lineBetween(x, 0, x, H);
+      for (let y = 0; y <= H; y += C) g.lineBetween(0, y, W, y);
+      for (let i = 0; i < 26; i++) {
+        let c = Math.floor(r() * D.cols), f = Math.floor(r() * D.filas);
+        if (CAMINO.has(c + ',' + f)) continue;
+        let x = c * C + C / 2 + (r() - 0.5) * 20, y = f * C + C / 2 + (r() - 0.5) * 20;
+        const col = r() < 0.8 ? 0x38d6e8 : 0xff4a5a;
+        g.lineStyle(1.2, col, 0.35);
+        for (let k = 0; k < 3; k++) {
+          const hz = r() < 0.5, l = (r() < 0.5 ? -1 : 1) * (10 + r() * 22);
+          const nx = hz ? x + l : x, ny = hz ? y : y + l;
+          g.lineBetween(x, y, nx, ny); x = nx; y = ny;
+        }
+        g.fillStyle(col, 0.6).fillCircle(x, y, 1.8);
       }
     }
     // Ciudad: losas de edificios derrumbados (planas, para que las torres se puedan poner encima)
@@ -1514,7 +1542,7 @@
     bandaCamino(g, ANCHO_CAMINO + 5, T.oscuro, 0.55);
     bandaCamino(g, ANCHO_CAMINO, T.rutaBorde, 1);
     bandaCamino(g, ANCHO_CAMINO - 3, T.ruta, 1);
-    if (!T.ciudad) {
+    if (!T.ciudad && !T.terminus) {
       bandaCamino(g, 14, T.huella, 0.55);
       bandaCamino(g, 7, T.ruta, 1);
     }
@@ -1553,6 +1581,20 @@
       }
     }
 
+    // Núcleo: flechas tenues sobre el camino que marcan el sentido hacia la base
+    if (T.terminus) {
+      g.lineStyle(1.6, 0x38d6e8, 0.45);
+      for (const R of RUTAS) R.tramos.forEach((t, i) => {
+        const ux = (t.b.x - t.a.x) / t.l, uy = (t.b.y - t.a.y) / t.l, px = -uy, py = ux;
+        const d0 = i === 0 ? 8 : ANCHO_CAMINO / 2 + 4, d1 = t.l - ANCHO_CAMINO / 2 - 4;
+        for (let d = d0; d <= d1; d += 20) {
+          const x = t.a.x + ux * d, y = t.a.y + uy * d;
+          g.lineBetween(x - ux * 4 + px * 5, y - uy * 4 + py * 5, x + ux * 2, y + uy * 2);
+          g.lineBetween(x - ux * 4 - px * 5, y - uy * 4 - py * 5, x + ux * 2, y + uy * 2);
+        }
+      });
+    }
+
     // Rocas y matorrales (o esquirlas de hielo) repartidos fuera del camino
     for (let c = 0; c < D.cols; c++) {
       for (let f = 0; f < D.filas; f++) {
@@ -1561,6 +1603,26 @@
         if (v > 0.34) continue;
         const ex = r() < 0.5 ? 6 : C - 6, ey = r() < 0.5 ? 6 : C - 6;
         const x = c * C + ex, y = f * C + ey;
+        if (T.terminus) {
+          if (v < 0.07) {
+            // gabinete de servidores con luces
+            const cx = c * C + C / 2 + (r() - 0.5) * 10, cy = c % 2 ? f * C + C / 2 : f * C + C / 2 + (r() - 0.5) * 10;
+            g.fillStyle(0x000000, 0.35).fillRect(cx - 7 + 2, cy - 10 + 2, 14, 20);
+            g.fillStyle(0x2a3244, 1).fillRect(cx - 7, cy - 10, 14, 20);
+            g.lineStyle(1, 0x46526c, 1).strokeRect(cx - 7, cy - 10, 14, 20);
+            for (let k = 0; k < 4; k++) { g.fillStyle(0x10141e, 1).fillRect(cx - 5, cy - 8 + k * 4.5, 10, 3); g.fillStyle(r() < 0.75 ? 0x38d6e8 : 0xff4a5a, 0.9).fillRect(cx + 2, cy - 7.5 + k * 4.5, 2, 2); }
+          } else if (v < 0.16) {
+            // nodo: anillo con punto
+            g.lineStyle(1.2, 0x38d6e8, 0.4).strokeCircle(x, y, 3.5);
+            g.fillStyle(0x38d6e8, 0.55).fillCircle(x, y, 1.4);
+          } else if (v < 0.24) {
+            // rejilla de ventilación
+            g.fillStyle(0x141924, 1).fillRect(x - 6, y - 4, 12, 8);
+            g.lineStyle(0.8, 0x3a4660, 1);
+            for (let k = -4; k <= 4; k += 2) g.lineBetween(x + k, y - 3, x + k, y + 3);
+          }
+          continue;
+        }
         if (T.ciudad) {
           if (v < 0.09) {
             // auto quemado
@@ -1633,6 +1695,23 @@
       }
     }
 
+    // Base al centro: búnker redondo sobre el final del camino
+    if (baseCentral()) {
+      const cx = fin.x, cy = fin.y, R = RADIO_BASE;
+      g.fillStyle(COL.sombra, 0.3).fillCircle(cx + 3, cy + 4, R);
+      g.fillStyle(0x9a9ea3, 1).fillCircle(cx, cy, R);
+      g.lineStyle(1.5, 0x55595e, 1).strokeCircle(cx, cy, R);
+      for (let k = 0; k < 16; k++) {
+        const a0 = k / 16 * Math.PI * 2, a1 = (k + 1) / 16 * Math.PI * 2;
+        g.lineStyle(4, k % 2 ? 0x222222 : 0xf1c40f, 1);
+        g.beginPath(); g.arc(cx, cy, R - 4, a0, a1); g.strokePath();
+      }
+      g.fillStyle(0xb9bdc2, 1).fillCircle(cx, cy, R - 8);
+      g.lineStyle(1, 0x6f7378, 1).strokeCircle(cx, cy, R - 8);
+      g.fillStyle(0x1f6fc2, 1).fillCircle(cx, cy, 7);
+      g.fillStyle(0x8fc8ff, 1).fillCircle(cx - 2, cy - 2, 3);
+      return;
+    }
     // Base: búnker de hormigón en el borde derecho
     const bx = W - 24, by = fin.y - 24;
     g.fillStyle(COL.sombra, 0.28).fillRoundedRect(bx + 3, by + 4, 26, 48, 3);
@@ -1659,7 +1738,8 @@
       if (horiz) o.setPosition(4, p0.y - 30); else o.setPosition(p0.x + 20, 3);
       return o;
     });
-    txtBase.setPosition(W - 3, fin.y - 36).setColor(TM.texto);
+    if (baseCentral()) txtBase.setOrigin(0.5, 1).setPosition(fin.x, fin.y - RADIO_BASE - 3).setColor(TM.texto);
+    else txtBase.setOrigin(1, 0).setPosition(W - 3, fin.y - 36).setColor(TM.texto);
   }
 
   function circuloPunteado(g, x, y, r, color, alfa, ancho) {
@@ -2682,8 +2762,10 @@
   let mapaElegido = null;
   const mapaAbierto = id => {
     const m = D.mapas[id];
-    return !!m && (D.desbloquearTodo || !m.requiere || !!G.guardado.completados[m.requiere]);
+    return !!m && (D.desbloquearTodo || requisitos(m).every(r => !!G.guardado.completados[r]));
   };
+  // "requiere" puede ser un escenario o una lista de escenarios
+  const requisitos = m => !m.requiere ? [] : Array.isArray(m.requiere) ? m.requiere : [m.requiere];
   function pintarSelector() {
     const cont = $('veloMapas');
     cont.innerHTML = '';
@@ -2692,7 +2774,8 @@
       const b = document.createElement('button');
       b.className = 'mapaBtn' + (id === mapaElegido ? ' sel' : '');
       b.disabled = !abierto;
-      const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
+      const falta = requisitos(m).filter(r => !G.guardado.completados[r]);
+      const estado = !abierto ? (requisitos(m).length > 1 ? 'Completa los otros ' + requisitos(m).length + ' escenarios' + (falta.length < requisitos(m).length ? ' (faltan ' + falta.length + ')' : '') : 'Completa ' + D.mapas[falta[0]].nombre)
         : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
       b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + (m.caminos ? ' · ' + m.caminos.length + ' entradas' : '') + (m.rasgo ? ' · ' + m.rasgo : '') + '</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
       b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); pintarLore(); });
@@ -2837,7 +2920,7 @@
       : gano ? 'superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
     // Tras ganar, deja elegido el escenario que se acaba de abrir, si hay uno
     mapaElegido = mapaId; modoElegido = modo;
-    if (gano) for (const id in D.mapas) if (D.mapas[id].requiere === mapaId && !G.guardado.completados[id]) { mapaElegido = id; break; }
+    if (gano) for (const id in D.mapas) if (requisitos(D.mapas[id]).includes(mapaId) && mapaAbierto(id) && !G.guardado.completados[id]) { mapaElegido = id; break; }
     pintarSelector(); pintarModos();
     // Línea de historia del resultado
     poner($('veloLore'), 'textContent', modo === 'infinito' ? D.historiaInfinito : gano ? (MAPA.lore ? MAPA.lore.victoria : '') : D.historiaDerrota);

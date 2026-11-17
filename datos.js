@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.19.0',
+  version: '0.20.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -665,6 +665,49 @@ const DATOS = {
         /* 29 */ [{ tipo: 'blindado', n: 24, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 24, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 17, cada: 0.6, desde: 6 }],
         /* 30 JEFE */ [{ tipo: 'soldado', n: 24, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 14, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 17, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 17, cada: 0.5, desde: 12 }]
       ]
-    }
+    },
+    terminus: {
+      nombre: 'Núcleo TERMINUS', dificultad: 'Final', rasgo: 'espiral', tema: 'terminus',
+      requiere: ['desierto', 'ciudad', 'artico', 'selva'],   // se abre al completar los otros cuatro
+      lore: { intro: 'El Núcleo de TERMINUS. El equipo llegó al centro para apagarla; sus máquinas convergen desde todas partes.', victoria: 'TERMINUS se apagó. La humanidad tiene una última esperanza.' },
+      totalOleadas: 50,
+      escalaVida: 0.52,                           // espiral muy larga y el jugador llega con torres combo desbloqueadas: los enemigos aguantan mucho más
+      enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
+      // ESPIRAL HACIA EL CENTRO: entra por arriba a la izquierda y da dos vueltas hasta la base, al centro del mapa.
+      // Entre vuelta y vuelta quedan dos celdas libres para torres. Oleadas: las de Refugio Verde con 15% más enemigos.
+      camino: [[-1, 1], [11, 1], [11, 14], [1, 14], [1, 4], [8, 4], [8, 11], [4, 11], [4, 7], [6, 7]],
+      oleadas: [
+        /*  1 */ [{ tipo: 'soldado', n: 12,  cada: 1.0 }],
+        /*  2 */ [{ tipo: 'soldado', n: 14, cada: 0.9 }],
+        /*  3 */ [{ tipo: 'soldado', n: 12,  cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 6, cada: 0.6, desde: 5 }],
+        /*  4 */ [{ tipo: 'corredor', n: 8, cada: 0.5, desde: 0 }, { tipo: 'dron', n: 5, cada: 1.5, desde: 4 }],
+        /*  5 */ [{ tipo: 'blindado', n: 5, cada: 2.5, desde: 0 }, { tipo: 'soldado', n: 12, cada: 0.8, desde: 2 }],
+        /*  6 */ [{ tipo: 'corredor', n: 14, cada: 0.45, desde: 0 }, { tipo: 'dron', n: 6, cada: 1.2, desde: 3 }],
+        /*  7 */ [{ tipo: 'blindado', n: 7, cada: 2.0, desde: 0 }, { tipo: 'dron', n: 8, cada: 1.0, desde: 4 }],
+        /*  8 */ [{ tipo: 'soldado', n: 22, cada: 0.55, desde: 0 }, { tipo: 'corredor', n: 12, cada: 0.5, desde: 4 }],
+        /*  9 */ [{ tipo: 'blindado', n: 8, cada: 1.8, desde: 0 }, { tipo: 'dron', n: 12, cada: 0.9, desde: 3 }],
+        /* 10 JEFE */ [{ tipo: 'soldado', n: 14, cada: 0.8, desde: 0 }, { tipo: 'jefe', n: 1, cada: 1, desde: 4 }, { tipo: 'corredor', n: 8, cada: 0.5, desde: 8 }, { tipo: 'dron', n: 6, cada: 1.0, desde: 10 }],
+        /* 11 */ [{ tipo: 'soldado', n: 28, cada: 0.5, desde: 0 }, { tipo: 'dron', n: 12, cada: 0.8, desde: 3 }],
+        /* 12 */ [{ tipo: 'blindado', n: 12, cada: 1.6, desde: 0 }, { tipo: 'corredor', n: 14, cada: 0.45, desde: 5 }],
+        /* 13 */ [{ tipo: 'corredor', n: 20, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.7, desde: 2 }],
+        /* 14 */ [{ tipo: 'soldado', n: 33, cada: 0.4, desde: 0 }, { tipo: 'blindado', n: 6, cada: 2.0, desde: 3 }],
+        /* 15 */ [{ tipo: 'blindado', n: 14, cada: 1.4, desde: 0 }, { tipo: 'dron', n: 16, cada: 0.7, desde: 4 }],
+        /* 16 */ [{ tipo: 'soldado', n: 28, cada: 0.45, desde: 0 }, { tipo: 'corredor', n: 16, cada: 0.4, desde: 3 }, { tipo: 'dron', n: 8, cada: 1.0, desde: 6 }],
+        /* 17 */ [{ tipo: 'blindado', n: 16, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 12, cada: 0.5, desde: 6 }],
+        /* 18 */ [{ tipo: 'soldado', n: 36, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 20, cada: 0.6, desde: 4 }],
+        /* 19 */ [{ tipo: 'blindado', n: 16, cada: 1.3, desde: 0 }, { tipo: 'corredor', n: 22, cada: 0.4, desde: 2 }, { tipo: 'dron', n: 14, cada: 0.7, desde: 6 }],
+        /* 20 JEFE */ [{ tipo: 'soldado', n: 22, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.5, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 6 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 9 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 10 }],
+        /* 21 */ [{ tipo: 'soldado', n: 39, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 16, cada: 0.6, desde: 3 }],
+        /* 22 */ [{ tipo: 'blindado', n: 16, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 22, cada: 0.4, desde: 4 }],
+        /* 23 */ [{ tipo: 'corredor', n: 28, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 20, cada: 0.6, desde: 2 }],
+        /* 24 */ [{ tipo: 'blindado', n: 22, cada: 1.1, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.8, desde: 5 }],
+        /* 25 */ [{ tipo: 'soldado', n: 41, cada: 0.35, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.4, desde: 3 }, { tipo: 'dron', n: 14, cada: 0.8, desde: 6 }],
+        /* 26 */ [{ tipo: 'dron', n: 25, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 16, cada: 1.2, desde: 2 }],
+        /* 27 */ [{ tipo: 'blindado', n: 25, cada: 1.0, desde: 0 }, { tipo: 'corredor', n: 28, cada: 0.35, desde: 5 }],
+        /* 28 */ [{ tipo: 'soldado', n: 44, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 22, cada: 0.5, desde: 4 }],
+        /* 29 */ [{ tipo: 'blindado', n: 28, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 28, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 20, cada: 0.6, desde: 6 }],
+        /* 30 JEFE */ [{ tipo: 'soldado', n: 28, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 16, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 20, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 20, cada: 0.5, desde: 12 }]
+      ]
+    },
   }
 };
