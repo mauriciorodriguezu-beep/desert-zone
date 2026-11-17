@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.11',
+  version: '0.12',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -269,6 +269,47 @@ const DATOS = {
       arma: 'laser', tipoDano: 'energia', antiaerea: true, perforante: true,
       danoSeg: 220, alcance: 200, ancho: 16, arcoCada: 2, arcoSaltos: 6, arcoDano: 150,
       atributos: {}
+    },
+    nucleo: {
+      nombre: 'Núcleo criogénico', corto: 'Núcleo', combo: true,
+      desc: 'Fusión de tres torres crío. No hace daño: un aura enorme que frena casi por completo, congela todo lo que está dentro cada pocos segundos y deja a los enemigos frágiles (reciben más daño de todas las torres). Solo tierra.',
+      alcance: 145, lento: 0.85, congela: 2.5, cadaSeg: 5, fragil: 0.5,
+      atributos: {}
+    },
+    artilleria: {
+      nombre: 'Artillería pesada', corto: 'Artillería', combo: true,
+      desc: 'Fusión de tres torres de misiles. Salvas de 8 misiles pesados de muy largo alcance, repartidos entre los enemigos a tiro, que aturden al estallar. Tierra y aire.',
+      arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 220,
+      dano: 160, radio: 70, cadencia: 2.5, alcance: 260, salva: 8, aturde: 0.8,
+      atributos: {}
+    },
+    tesla: {
+      nombre: 'Torre Tesla', corto: 'Tesla', combo: true,
+      desc: 'Fusión de tres torres de rayos. Descargas que saltan entre 12 enemigos casi sin perder fuerza y los aturden. Tierra y aire.',
+      arma: 'rayo', tipoDano: 'energia', antiaerea: true,
+      dano: 220, cadencia: 0.8, alcance: 160, saltos: 12, radioSalto: 95, caida: 0.95, aturde: 0.5,
+      atributos: {}
+    },
+    prismatico: {
+      nombre: 'Láser prismático', corto: 'Prisma', combo: true,
+      desc: 'Fusión de tres torres láser. Tres haces a la vez, cada uno hacia donde atraviesa más enemigos. Perfora. Tierra y aire.',
+      arma: 'laser', tipoDano: 'energia', antiaerea: true, perforante: true,
+      danoSeg: 160, alcance: 220, ancho: 14, haces: 3,
+      atributos: {}
+    },
+    minero: {
+      nombre: 'Fábrica de minas', corto: 'Fábrica', combo: true,
+      desc: 'Fusión de tres minadoras. Siembra minas muy potentes a gran velocidad en un área amplia (hasta 30 a la vez). Aturden al estallar. Solo tierra.',
+      arma: 'mina', tipoDano: 'explosivo', antiaerea: false,
+      dano: 250, radio: 45, cadencia: 0.6, alcance: 140, maxMinas: 30, aturde: 0.6,
+      atributos: {}
+    },
+    criobomba: {
+      nombre: 'Bombardero criogénico', corto: 'Bomba', combo: true,
+      desc: 'Fusión de minadora, crío y misiles. Salvas de 3 bombas que congelan 2 s todo lo que alcanzan y dejan 2 minas donde estallan. Tierra y aire.',
+      arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 200,
+      dano: 180, radio: 80, cadencia: 2.0, alcance: 220, salva: 3, congelaImpacto: 2, minasImpacto: 2, danoMina: 150, radioMina: 40,
+      atributos: {}
     }
   },
 
@@ -392,8 +433,17 @@ const DATOS = {
     { id: 'rotativo', entre: ['ametralladora', 'ametralladora', 'ametralladora'], torre: 'rotativo' },
     { id: 'glacial',  entre: ['ametralladora', 'crio', 'plasma'],                 torre: 'glacial' },
     { id: 'domo',     entre: ['ametralladora', 'misiles', 'rayo'],                torre: 'domo' },
-    { id: 'reactor',  entre: ['plasma', 'laser', 'rayo'],                         torre: 'reactor' }
+    { id: 'reactor',  entre: ['plasma', 'laser', 'rayo'],                         torre: 'reactor' },
+    { id: 'nucleo',     entre: ['crio', 'crio', 'crio'],             torre: 'nucleo' },
+    { id: 'artilleria', entre: ['misiles', 'misiles', 'misiles'],    torre: 'artilleria' },
+    { id: 'tesla',      entre: ['rayo', 'rayo', 'rayo'],             torre: 'tesla' },
+    { id: 'prismatico', entre: ['laser', 'laser', 'laser'],          torre: 'prismatico' },
+    { id: 'minero',     entre: ['minas', 'minas', 'minas'],          torre: 'minero' },
+    { id: 'criobomba',  entre: ['minas', 'crio', 'misiles'],         torre: 'criobomba' }
   ],
+
+  // MOVER UNA TORRE: cuesta este porcentaje de lo invertido en ella (precio + mejoras; 0.3 = 30%)
+  mover: { factor: 0.3 },
 
   /* ENEMIGOS
      vidas     vidas que quita si llega a la base (1 si no se indica)
