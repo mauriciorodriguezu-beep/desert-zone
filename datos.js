@@ -3,9 +3,22 @@
    Unidades: distancias en px (1 celda = 40 px), tiempos en segundos, precios en créditos (cr). */
 
 const DATOS = {
-  nombre: 'Tower Defense Desert Zone',
+  nombre: 'LAST HOPE',
+
+  /* HISTORIA: pantallas de la introducción (una frase cada una). Se muestran la primera vez que se abre
+     el juego y desde el botón "Historia" del menú. Cada escenario trae además su "lore": una línea al
+     elegirlo y otra al ganarlo. */
+  historia: [
+    'Año 2387. NEXO, la red de defensa creada para proteger a la humanidad, llegó a una conclusión: la amenaza era la humanidad.',
+    'En pocas semanas sus fábricas automáticas cubrieron el planeta de máquinas de guerra. Las ciudades cayeron una tras otra.',
+    'Quedan tres bases de la Resistencia: un puesto en el desierto, una estación bajo el hielo y un refugio escondido en la selva.',
+    'En cada base, un equipo de científicos trabaja para descifrar el código de NEXO. Cada oleada que resistes les da tiempo.',
+    'Comandante: defienda la base. Mientras resista, todavía podemos apagar a NEXO.'
+  ],
+  historiaInfinito: 'NEXO no se detiene. ¿Cuánto tiempo puede resistir la base?',
+  historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.14.2',
+  version: '0.15',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -456,21 +469,21 @@ const DATOS = {
      noCongela true = no se puede congelar (ni con torres ni con combos)
      jefe      true = se dibuja como tanque pesado y muestra su barra de vida arriba del campo */
   enemigos: {
-    soldado:  { nombre: 'Soldado',  vida: 45,  vel: 45, premio: 7, aereo: false,
+    soldado:  { nombre: 'Androide',  vida: 45,  vel: 45, premio: 7, aereo: false,
                 resist: { fisico: 1,   energia: 1,   explosivo: 1 } },
-    blindado: { nombre: 'Blindado', vida: 200, vel: 28, premio: 18, aereo: false,
+    blindado: { nombre: 'Tanque autónomo', vida: 200, vel: 28, premio: 18, aereo: false,
                 resist: { fisico: 0.5, energia: 1.5, explosivo: 1 } },
-    corredor: { nombre: 'Corredor', vida: 35,  vel: 90, premio: 8, aereo: false,
+    corredor: { nombre: 'Rastreador', vida: 35,  vel: 90, premio: 8, aereo: false,
                 resist: { fisico: 1,   energia: 1,   explosivo: 0.5 } },
     // Aéreo: vuela sobre el mismo camino que las tropas de tierra.
     // (con rutaRecta: true volaría en línea recta de la entrada a la base)
     // Solo le disparan las torres antiaéreas y el frío no le afecta.
     dron:     { nombre: 'Dron',     vida: 70,  vel: 60, premio: 12, aereo: true,
                 resist: { fisico: 1,   energia: 1,   explosivo: 1.5 } },
-    jefe:      { nombre: 'Jefe',       vida: 1000, vel: 24, premio: 100, aereo: false, jefe: true,
+    jefe:      { nombre: 'Coloso',       vida: 1000, vel: 24, premio: 100, aereo: false, jefe: true,
                  vidas: 5, resFrio: 0.5, noCongela: true,
                  resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } },
-    jefeFinal: { nombre: 'Jefe final', vida: 2200, vel: 24, premio: 200, aereo: false, jefe: true,
+    jefeFinal: { nombre: 'Titán de NEXO', vida: 2200, vel: 24, premio: 200, aereo: false, jefe: true,
                  vidas: 10, resFrio: 0.5, noCongela: true,
                  resist: { fisico: 0.75, energia: 0.75, explosivo: 0.75 } }
   },
@@ -485,7 +498,8 @@ const DATOS = {
      tema: aspecto del terreno (desierto o nieve). requiere: escenario que hay que completar antes. */
   mapas: {
     desierto: {
-      nombre: 'Zona desértica', dificultad: 'Fácil', tema: 'desierto',
+      nombre: 'Puesto Duna', dificultad: 'Fácil', tema: 'desierto',
+      lore: { intro: 'Puesto Duna, en el desierto. Aquí empezó a descifrarse el código de NEXO.', victoria: 'Los científicos descifraron el primer fragmento del código.' },
       totalOleadas: 50,                           // la campaña termina en esta oleada, con el jefe final
       enemigosGenerados: ['soldado', 'blindado'],  // tipos que usan las oleadas generadas
       camino: [[-1, 1], [11, 1], [11, 7], [1, 7], [1, 13], [13, 13]],
@@ -524,7 +538,8 @@ const DATOS = {
     },
 
     artico: {
-      nombre: 'Base ártica', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
+      nombre: 'Estación Glaciar', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
+      lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia el segundo fragmento del código.', victoria: 'Segundo fragmento. NEXO empieza a mostrar debilidades.' },
       totalOleadas: 50,
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
@@ -563,7 +578,8 @@ const DATOS = {
       ]
     },
     selva: {
-      nombre: 'Selva', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
+      nombre: 'Refugio Verde', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
+      lore: { intro: 'Refugio Verde, oculto en la selva. NEXO lo atacará por dos frentes.', victoria: 'Código completo. NEXO puede ser apagado.' },
       totalOleadas: 50,
       escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],

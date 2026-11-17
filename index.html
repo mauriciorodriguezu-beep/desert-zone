@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a0e1a">
-<title>Tower Defense Desert Zone</title>
+<title>LAST HOPE</title>
 <link rel="icon" href="iconos/icono.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="iconos/icono-32.png">
 <link rel="apple-touch-icon" href="iconos/icono-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Desert Zone">
+<meta name="apple-mobile-web-app-title" content="Last Hope">
 <style>
   :root {
     --fondo: #070a13; --panel: #0d1220; --caja: #111a2c; --linea: #1e2d4a;
@@ -180,6 +180,20 @@
   #acciones button:disabled { opacity: .5; }
 
   /* Pantalla de inicio / final */
+  /* Historia (introducción) */
+  #historia { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding-block: 32px; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); text-align: center;
+    background: radial-gradient(ellipse at 50% 30%, #1a0d10 0%, #07080e 70%); }
+  #historia .hEtiqueta { font-size: 11px; letter-spacing: .3em; color: #ff5a4a; font-weight: 700; }
+  #historiaTexto { font-size: 19px; line-height: 1.55; color: #e8eefc; max-width: 330px; min-height: 7.8em; margin: 0; text-wrap: pretty; }
+  #historiaPuntos { display: flex; gap: 7px; }
+  #historiaPuntos i { width: 7px; height: 7px; border-radius: 50%; background: #2a3550; }
+  #historiaPuntos i.on { background: #ff5a4a; }
+  #historia .hBotones { display: flex; gap: 10px; }
+  #historiaSaltar { height: 42px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--linea); background: transparent; color: var(--tenue); font-size: 14px; font-weight: 600; }
+  #historiaSig { height: 42px; padding: 0 22px; border-radius: 10px; border: 1px solid #a83232; background: #2a0f12; color: #ffd6d0; font-size: 14px; font-weight: 700; }
+  #veloLore { font-size: 13px; color: #ffb4a8; font-style: italic; margin: 0; max-width: 320px; line-height: 1.45; min-height: 1.45em; }
+  #veloSecundarios { display: flex; gap: 8px; }
+  #veloHistoria { height: 40px; padding: 0 18px; border-radius: 10px; font-size: 14px; font-weight: 600; background: var(--caja); border: 1px solid var(--linea); color: var(--texto); }
   #velo {
     position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 14px; padding: 24px; text-align: center; background: rgba(7, 10, 19, .93);
@@ -224,7 +238,7 @@
   </div>
   <div id="aviso"></div>
   <div id="mapa">
-    <div id="barraJefe" hidden><b>JEFE</b><span><i id="barraJefeVida"></i></span></div>
+    <div id="barraJefe" hidden><b id="barraJefeNombre">JEFE</b><span><i id="barraJefeVida"></i></span></div>
     <div id="zoomBtns"><button id="zoomMas" aria-label="Acercar">+</button><button id="zoomMenos" aria-label="Alejar" hidden>−</button></div>
     <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnManual">Manual</button></div>
   </div>
@@ -255,16 +269,18 @@
     <p id="veloSub"></p>
     <div id="veloMapas"></div>
     <div id="veloModos"></div>
+    <p id="veloLore"></p>
     <div id="veloDatos"></div>
     <button id="veloContinuar" hidden></button>
     <button id="veloBoton">Jugar</button>
-    <button id="veloManual">Manual del juego</button>
+    <div id="veloSecundarios"><button id="veloHistoria">Historia</button><button id="veloManual">Manual del juego</button></div>
     <p id="veloCredito"></p>
   </div>
+  <div id="historia" hidden><div class="hEtiqueta">TRANSMISIÓN DE LA RESISTENCIA</div><p id="historiaTexto"></p><div id="historiaPuntos"></div><div class="hBotones"><button id="historiaSaltar">Saltar</button><button id="historiaSig">Siguiente</button></div></div>
 </div>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.14.2"></script>
-<script src="juego.js?v=0.14.2"></script>
+<script src="datos.js?v=0.15"></script>
+<script src="juego.js?v=0.15"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {

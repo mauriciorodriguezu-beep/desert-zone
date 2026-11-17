@@ -527,7 +527,7 @@
     G.pendientes[G.oleada] = cola.length;
     G.generando = true;
     G.enCuenta = false; G.cuenta = 0;
-    if (oleadaConJefe(G.oleada)) aviso('¡Jefe en camino!');
+    if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de NEXO se acerca!' : '¡Un Coloso se acerca!');
     return true;
   }
 
@@ -562,7 +562,7 @@
       G.creditos += e.def.premio;
       G.bajas++;
       G.guardado.bajasTotales++;
-      if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡Jefe destruido! +' + e.def.premio + 'cr'); }
+      if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡' + e.def.nombre + ' destruido! +' + e.def.premio + 'cr'); }
       else G.efectos.push(e.tipo === 'blindado' || e.tipo === 'dron' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
       flotar(e.x, e.y - 10, '+' + e.def.premio);
       resolverEnemigo(e);
@@ -850,7 +850,7 @@
       if (e.dist >= largoDe(e)) {
         const quita = e.def.vidas || 1;
         G.vidas -= quita;
-        aviso(e.def.jefe ? '¡El jefe llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
+        aviso(e.def.jefe ? '¡El ' + e.def.nombre + ' llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
         resolverEnemigo(e);
         continue;
       }
@@ -1708,6 +1708,10 @@
       g.lineStyle(1.6, COL.oro, 1).strokeCircle(x + cs * 2, y + sn * 2, 8.5);
       g.fillStyle(COL.rojo, 1).fillCircle(x + cs * 2, y + sn * 2, 3.6);
       g.fillStyle(0xff8a8a, 1).fillCircle(x + cs * 2 - 1, y + sn * 2 - 1.2, 1.3);
+      // Antena de enlace con NEXO
+      const ax = x - cs * 10 + sn * 7, ay = y - sn * 10 - cs * 7;
+      g.lineStyle(1.4, 0x8a949e, 1).lineBetween(x - cs * 6 + sn * 5, y - sn * 6 - cs * 5, ax, ay);
+      g.fillStyle(0xff3b3b, 0.6 + 0.4 * Math.sin(G.t * 6)).fillCircle(ax, ay, 1.8);
     } else if (blind) {
       poli(g, x + 2, y + 3, a, caja(-12, -9, 24, 18), COL.sombra, 0.28);
       poli(g, x, y, a, caja(-11, -9.5, 22, 4.5), COL.carbonOsc, 1);
@@ -1724,14 +1728,21 @@
       const cs = Math.cos(a), sn = Math.sin(a);
       g.fillStyle(0x3a3634, 1).fillCircle(x + cs * 1, y + sn * 1, 4.6);
       g.lineStyle(1, 0x1c1a19, 1).strokeCircle(x + cs * 1, y + sn * 1, 4.6);
-      g.fillStyle(0x6a6460, 1).fillCircle(x + cs * 0.2 - 0.8, y + sn * 0.2 - 0.8, 1.4);
+      g.fillStyle(0xff3b3b, 1).fillCircle(x + cs * 2.4, y + sn * 2.4, 1.6);   // sensor de NEXO (sin tripulación)
     } else if (e.tipo === 'corredor') {
-      // Vehículo ligero y rápido: carrocería en cuña con franja amarilla
+      // Rastreador: robot de cuatro patas, cuerpo en cuña y ojo sensor rojo
       poli(g, x + 1.5, y + 2.5, a, caja(-9, -5.5, 18, 11), COL.sombra, 0.26);
-      for (const [rx, ry] of [[-8, -6.8], [3, -6.8], [-8, 3.8], [3, 3.8]]) poli(g, x, y, a, caja(rx, ry, 5, 3), 0x15171a, 1);
-      poli(g, x, y, a, [[-9, -4], [4, -4], [10, -1.6], [10, 1.6], [4, 4], [-9, 4]], COL.rojo, 1, COL.rojoOsc, 1.1);
-      poli(g, x, y, a, caja(-3, -2.6, 5, 5.2), 0x2a2625, 1);
-      poli(g, x, y, a, caja(-9, -4, 2.5, 8), COL.oro, 1);
+      const zanc = Math.sin(e.dist * 0.6) * 2.2;
+      for (const [rx, ry, f] of [[-5, -4, 1], [4, -4, -1], [-5, 4, -1], [4, 4, 1]]) {
+        const cs2 = Math.cos(a), sn2 = Math.sin(a), bx = x + rx * cs2 - ry * sn2, by = y + rx * sn2 + ry * cs2;
+        const lx = rx + zanc * f, ly = ry + Math.sign(ry) * 3.5;
+        g.lineStyle(1.6, 0x262b30, 1).lineBetween(bx, by, x + lx * cs2 - ly * sn2, y + lx * sn2 + ly * cs2);
+      }
+      poli(g, x, y, a, [[-8, -3.6], [3, -3.6], [9, -1.2], [9, 1.2], [3, 3.6], [-8, 3.6]], 0x5d6670, 1, 0x262b30, 1.1);
+      poli(g, x, y, a, caja(-6, -1, 7, 2), 0xff3b3b, 0.85);
+      const cs = Math.cos(a), sn = Math.sin(a);
+      g.fillStyle(0x262b30, 1).fillCircle(x + cs * 5.5, y + sn * 5.5, 2.3);
+      g.fillStyle(0xff3b3b, 1).fillCircle(x + cs * 6, y + sn * 6, 1.3);
     } else if (e.tipo === 'dron') {
       // Dron de cuatro rotores: la sombra queda lejos porque vuela
       g.fillStyle(COL.sombra, 0.2).fillEllipse(x + 8, y + 11, 18, 11);
@@ -1748,17 +1759,19 @@
       g.lineStyle(1, 0x000000, 1).strokeCircle(x, y, 4.6);
       g.fillStyle(COL.rojo, 1).fillCircle(x, y, 2);
     } else {
+      // Androide de NEXO: hombros de metal, núcleo de energía en la espalda, brazo-cañón y visor rojo
       const vaiven = Math.sin(e.dist * 0.45) * 0.9;
       const px = x - Math.sin(a) * vaiven, py = y + Math.cos(a) * vaiven;
       g.fillStyle(COL.sombra, 0.26).fillEllipse(px + 1.5, py + 2.5, 14, 11);
-      poli(g, px, py, a, caja(-6.5, -3, 3.5, 6), 0x3b3228, 1);                       // mochila
-      poli(g, px, py, a, [[-3.5, -6.5], [1.5, -6.5], [4, -3.5], [4, 3.5], [1.5, 6.5], [-3.5, 6.5], [-4.8, 0]], COL.rojo, 1, COL.rojoOsc, 1.1);
-      poli(g, px, py, a, caja(1.5, 2.6, 10, 1.9), 0x1a1a1a, 1);                      // fusil
-      poli(g, px, py, a, caja(2, 1.6, 3, 3.6), 0xd9b08c, 1);                         // manos
-      const cs = Math.cos(a), sn = Math.sin(a);
-      g.fillStyle(0x3a3f45, 1).fillCircle(px + cs * 0.6, py + sn * 0.6, 3.9);
-      g.lineStyle(1, 0x1d2024, 1).strokeCircle(px + cs * 0.6, py + sn * 0.6, 3.9);
-      g.fillStyle(0x7d858d, 1).fillCircle(px + cs * 0.6 - 1, py + sn * 0.6 - 1.2, 1.2);
+      poli(g, px, py, a, caja(-6.5, -2.6, 3, 5.2), 0x2b3036, 1);                     // batería
+      poli(g, px, py, a, caja(-6, -1.2, 1.6, 2.4), 0xff3b3b, 0.9);                   // luz de la batería
+      poli(g, px, py, a, [[-4, -6.8], [2.5, -6.8], [4.2, -4.5], [4.2, 4.5], [2.5, 6.8], [-4, 6.8], [-5, 0]], 0x5d6670, 1, 0x262b30, 1.1);
+      poli(g, px, py, a, caja(1.5, 2.8, 10, 2.2), 0x262b30, 1);                      // brazo-cañón
+      poli(g, px, py, a, caja(10.5, 3.1, 1.5, 1.6), 0xff3b3b, 1);
+      const cs = Math.cos(a), sn = Math.sin(a), hx = px + cs * 0.8, hy = py + sn * 0.8;
+      g.fillStyle(0x8a949e, 1).fillCircle(hx, hy, 3.7);
+      g.lineStyle(1, 0x262b30, 1).strokeCircle(hx, hy, 3.7);
+      poli(g, hx, hy, a, caja(1.2, -2.4, 2.2, 4.8), 0xff3b3b, 1);                    // visor
     }
 
     const rr = jefe ? 24 : blind ? 14 : e.tipo === 'corredor' ? 12 : 10;
@@ -1923,7 +1936,10 @@
     // Barra de vida del jefe: va en la página (no en el mapa) para que se vea aunque haya zoom
     const jefe = G.enemigos.find(e => e.def.jefe && e.vivo);
     mostrar($('barraJefe'), !!jefe);
-    if (jefe) poner($('barraJefeVida').style, 'width', Math.round(Math.max(0, jefe.vida / jefe.vidaMax) * 100) + '%');
+    if (jefe) {
+      poner($('barraJefeVida').style, 'width', Math.round(Math.max(0, jefe.vida / jefe.vidaMax) * 100) + '%');
+      poner($('barraJefeNombre'), 'textContent', jefe.def.nombre.toUpperCase());
+    }
   }
 
   // ── Zoom del mapa: pellizcar con dos dedos, rueda del mouse o botones + / −. Con zoom, un dedo arrastra el mapa ──
@@ -2325,7 +2341,7 @@
       const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
         : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
       b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + (m.caminos ? ' · ' + m.caminos.length + ' entradas' : '') + '</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
-      b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); });
+      b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); pintarLore(); });
       cont.appendChild(b);
     }
   }
@@ -2341,9 +2357,41 @@
       const b = document.createElement('button');
       b.className = 'mapaBtn' + (id === modoElegido ? ' sel' : '');
       b.innerHTML = '<b>' + nombre + '</b><span>' + texto + '</span>';
-      b.addEventListener('click', () => { modoElegido = id; pintarModos(); });
+      b.addEventListener('click', () => { modoElegido = id; pintarModos(); pintarLore(); });
       cont.appendChild(b);
     }
+  }
+
+  // ── Historia: introducción con texto que se escribe solo. Se ve la primera vez y desde el botón Historia ──
+  let histI = 0, histTimer = null, histAl = null;
+  function pintarHistoria() {
+    const txt = D.historia[histI], el = $('historiaTexto');
+    clearInterval(histTimer);
+    el.textContent = '';
+    let n = 0;
+    histTimer = setInterval(() => {
+      n += 2;
+      el.textContent = txt.slice(0, n);
+      if (n >= txt.length) clearInterval(histTimer);
+    }, 30);
+    $('historiaPuntos').innerHTML = D.historia.map((_, i) => '<i class="' + (i === histI ? 'on' : '') + '"></i>').join('');
+    $('historiaSig').textContent = histI < D.historia.length - 1 ? 'Siguiente' : 'Defender la base';
+  }
+  function abrirHistoria(alTerminar) {
+    histI = 0; histAl = alTerminar || null;
+    $('historia').hidden = false;
+    pintarHistoria();
+  }
+  function cerrarHistoria() {
+    clearInterval(histTimer);
+    $('historia').hidden = true;
+    if (!G.guardado.historiaVista) { G.guardado.historiaVista = true; guardar(); }
+    if (histAl) { const f = histAl; histAl = null; f(); }
+  }
+  // Línea de historia bajo los selectores: la del escenario elegido (o la del modo infinito)
+  function pintarLore() {
+    const m = D.mapas[mapaElegido] || MAPA;
+    poner($('veloLore'), 'textContent', modoElegido === 'infinito' ? D.historiaInfinito : (m.lore ? m.lore.intro : ''));
   }
 
   function mostrarMenu() {
@@ -2351,7 +2399,7 @@
     $('veloTitulo').textContent = D.nombre;
     $('veloSub').textContent = 'Elige un escenario';
     mapaElegido = mapaId; modoElegido = modo;
-    pintarSelector(); pintarModos();
+    pintarSelector(); pintarModos(); pintarLore();
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
       : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
@@ -2371,6 +2419,8 @@
     mapaElegido = mapaId; modoElegido = modo;
     if (gano) for (const id in D.mapas) if (D.mapas[id].requiere === mapaId && !G.guardado.completados[id]) { mapaElegido = id; break; }
     pintarSelector(); pintarModos();
+    // Línea de historia del resultado
+    poner($('veloLore'), 'textContent', modo === 'infinito' ? D.historiaInfinito : gano ? (MAPA.lore ? MAPA.lore.victoria : '') : D.historiaDerrota);
     $('veloDatos').innerHTML = '<div><b>' + G.vidas + '</b><span>vidas restantes</span></div><div><b>' + G.bajas + '</b><span>enemigos eliminados</span></div><div><b>' + cr(G.guardado.bajasTotales) + '</b><span>eliminados en total</span></div>';
     $('veloBoton').textContent = mapaElegido === mapaId ? 'Jugar de nuevo' : 'Jugar';
     $('velo').hidden = false;
@@ -2553,6 +2603,13 @@
     $('btnVel').addEventListener('click', () => { G.vel = G.vel >= 3 ? 1 : G.vel + 1; refrescarTodo(); });
     $('btnManual').addEventListener('click', () => abrirManual());
     $('veloManual').addEventListener('click', () => abrirManual());
+    $('veloHistoria').addEventListener('click', () => abrirHistoria());
+    $('historiaSaltar').addEventListener('click', cerrarHistoria);
+    $('historiaSig').addEventListener('click', () => {
+      const el = $('historiaTexto'), txt = D.historia[histI];
+      if (el.textContent.length < txt.length) { clearInterval(histTimer); el.textContent = txt; return; }   // primero completa la frase
+      if (histI < D.historia.length - 1) { histI++; pintarHistoria(); } else cerrarHistoria();
+    });
     $('manualCerrar').addEventListener('click', () => { $('manual').hidden = true; });
     for (const b of $('manualTabs').children) b.addEventListener('click', () => { manualTab = b.dataset.tab; pintarManual(); });
     $('btnContinuar').addEventListener('click', () => { G.pausa = false; refrescarTodo(); });
@@ -2622,6 +2679,7 @@
   armarBotonesTorre();
   conectarBotones();
   mostrarMenu();
+  if (!G.guardado.historiaVista) abrirHistoria();   // la primera vez, la historia antes del menú
   new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'mapa',
