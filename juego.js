@@ -24,31 +24,39 @@
   // Modo de juego: 'campana' (número fijo de oleadas, con jefe final) o 'infinito' (hasta perder)
   let modo = 'campana';
   function fijarTotal() { TOTAL_OLEADAS = modo === 'infinito' ? Infinity : (MAPA.totalOleadas || MAPA.oleadas.length); }
-  let PUNTOS = [], TRAMOS = [], LARGO = 0, CAMINO = new Set();
+  // RUTAS: un recorrido por cada entrada (todas terminan en la base). PUNTOS/TRAMOS/LARGO son los de la primera.
+  // TODOS: los tramos de todas las rutas (para dibujar el camino y no construir encima).
+  let RUTAS = [], TODOS = [], PUNTOS = [], TRAMOS = [], LARGO = 0, CAMINO = new Set();
   let AIRE = null;   // ruta recta de los enemigos aéreos, de la entrada a la base
   function cargarMapa(id) {
     if (!D.mapas[id]) id = Object.keys(D.mapas)[0];
     mapaId = id; MAPA = D.mapas[id]; fijarTotal();
-    // Camino: puntos en px, tramos con su largo acumulado y celdas ocupadas
-    PUNTOS = MAPA.camino.map(([c, r]) => ({ x: c * C + C / 2, y: r * C + C / 2 }));
-    TRAMOS = []; LARGO = 0;
-    for (let i = 0; i < PUNTOS.length - 1; i++) {
-      const a = PUNTOS[i], b = PUNTOS[i + 1];
-      const l = Math.hypot(b.x - a.x, b.y - a.y);
-      TRAMOS.push({ a, b, l, ini: LARGO });
-      LARGO += l;
-    }
+    // Caminos: uno o varios ("caminos" en datos.js). Puntos en px, tramos con su largo acumulado y celdas ocupadas
     CAMINO = new Set();
-    for (let i = 0; i < MAPA.camino.length - 1; i++) {
-      let [c, r] = MAPA.camino[i];
-      const [c2, r2] = MAPA.camino[i + 1];
-      const dc = Math.sign(c2 - c), dr = Math.sign(r2 - r);
-      for (;;) {
-        CAMINO.add(c + ',' + r);
-        if (c === c2 && r === r2) break;
-        c += dc; r += dr;
+    RUTAS = (MAPA.caminos || [MAPA.camino]).map(cam => {
+      const puntos = cam.map(([c, r]) => ({ x: c * C + C / 2, y: r * C + C / 2 }));
+      const tramos = [];
+      let largo = 0;
+      for (let i = 0; i < puntos.length - 1; i++) {
+        const a = puntos[i], b = puntos[i + 1];
+        const l = Math.hypot(b.x - a.x, b.y - a.y);
+        tramos.push({ a, b, l, ini: largo });
+        largo += l;
       }
-    }
+      for (let i = 0; i < cam.length - 1; i++) {
+        let [c, r] = cam[i];
+        const [c2, r2] = cam[i + 1];
+        const dc = Math.sign(c2 - c), dr = Math.sign(r2 - r);
+        for (;;) {
+          CAMINO.add(c + ',' + r);
+          if (c === c2 && r === r2) break;
+          c += dc; r += dr;
+        }
+      }
+      return { puntos, tramos, largo };
+    });
+    PUNTOS = RUTAS[0].puntos; TRAMOS = RUTAS[0].tramos; LARGO = RUTAS[0].largo;
+    TODOS = RUTAS.flatMap(R => R.tramos);
     const a = PUNTOS[0], b = PUNTOS[PUNTOS.length - 1];
     AIRE = { a, b, l: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
     if (escena) pintarMapa();
@@ -56,20 +64,21 @@
   // Posición y recorrido total de un enemigo: los aéreos vuelan en línea recta, el resto sigue el camino
   // (solo vuelan recto los aéreos marcados con rutaRecta en datos.js; hoy ninguno)
   const recto = def => !!(def.aereo && def.rutaRecta);
-  const largoDe = e => recto(e.def) ? AIRE.l : LARGO;
+  const largoDe = e => recto(e.def) ? AIRE.l : RUTAS[e.ruta || 0].largo;
   function posDe(e) {
-    if (!recto(e.def)) return posEn(e.dist);
+    if (!recto(e.def)) return posEn(e.dist, e.ruta);
     const k = Math.min(1, e.dist / AIRE.l);
     return { x: AIRE.a.x + (AIRE.b.x - AIRE.a.x) * k, y: AIRE.a.y + (AIRE.b.y - AIRE.a.y) * k };
   }
-  function posEn(d) {
-    for (const t of TRAMOS) {
+  function posEn(d, ruta) {
+    const R = RUTAS[ruta || 0];
+    for (const t of R.tramos) {
       if (d <= t.ini + t.l) {
         const k = Math.max(0, (d - t.ini) / t.l);
         return { x: t.a.x + (t.b.x - t.a.x) * k, y: t.a.y + (t.b.y - t.a.y) * k };
       }
     }
-    const u = PUNTOS[PUNTOS.length - 1];
+    const u = R.puntos[R.puntos.length - 1];
     return { x: u.x, y: u.y };
   }
 
@@ -107,7 +116,7 @@
     G.fase = 'jugando';
     G.creditos = D.inicio.creditos;
     G.vidas = D.inicio.vidas;
-    G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0;
+    G.oleada = 0; G.generando = false; G.cola = []; G.tOleada = 0; G.rutaSig = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null;
@@ -116,6 +125,7 @@
     guardar();
     limpiarFlotantes();
     refrescarTodo();
+    if (RUTAS.length > 1) aviso('Atención: los enemigos llegan por ' + RUTAS.length + ' entradas');
   }
 
   // ───────────────────────── 3. REGLAS ─────────────────────────
@@ -166,7 +176,7 @@
   // ¿Cabe una torre con centro en (x, y)? No puede salirse del campo, pisar el camino, la base ni otra torre
   function puedeConstruir(x, y) {
     if (x < MEDIA || y < MEDIA || x > W - MEDIA || y > H - MEDIA) return false;
-    for (const t of TRAMOS) if (distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < COLOC.claroCamino) return false;
+    for (const t of TODOS) if (distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < COLOC.claroCamino) return false;
     const fin = PUNTOS[PUNTOS.length - 1];
     if (x > W - 24 - MEDIA && Math.abs(y - fin.y) < 24 + MEDIA) return false;
     for (const t of G.torres) if (Math.abs(x - t.x) < COLOC.tamTorre && Math.abs(y - t.y) < COLOC.tamTorre) return false;
@@ -376,7 +386,9 @@
     const def = D.enemigos[tipo];
     const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
     const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada);
-    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true };
+    // Con varias entradas, los enemigos se reparten por turno entre ellas
+    const ruta = RUTAS.length > 1 ? (G.rutaSig++ % RUTAS.length) : 0;
+    const e = { tipo, def, oleada, vida, vidaMax: vida, dist: 0, ruta, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true };
     const p = posDe(e);
     e.x = p.x; e.y = p.y;
     G.enemigos.push(e);
@@ -467,9 +479,11 @@
   function puntosMinas(t) {
     if (t.pm && t.pmA === t.s.alcance) return t.pm;
     const r2 = t.s.alcance * t.s.alcance, out = [];
-    for (let d = 0; d <= LARGO; d += 6) {
-      const p = posEn(d), dx = p.x - t.x, dy = p.y - t.y;
-      if (dx * dx + dy * dy <= r2 && p.x >= 4 && p.x <= W - 4 && p.y >= 4 && p.y <= H - 4) out.push(p);
+    for (let ri = 0; ri < RUTAS.length; ri++) {
+      for (let d = 0; d <= RUTAS[ri].largo; d += 6) {
+        const p = posEn(d, ri), dx = p.x - t.x, dy = p.y - t.y;
+        if (dx * dx + dy * dy <= r2 && p.x >= 4 && p.x <= W - 4 && p.y >= 4 && p.y <= H - 4) out.push(p);
+      }
     }
     t.pm = out; t.pmA = t.s.alcance;
     return out;
@@ -611,7 +625,7 @@
       if (!e.vivo || (e.def.aereo && !s.antiaerea)) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx * dx + dy * dy > r2) continue;
-      let v = e.dist / largoDe(e) * 1e4;   // avance de 0 a 10.000, comparable entre tierra y aire
+      let v = 1e4 - (largoDe(e) - e.dist);   // el que está más cerca de la base (sirve con varias entradas)
       if (t.prioridad === 'fuerte') v += e.vida * 1e5;
       else if (t.prioridad === 'rapido') v += e.def.vel * 1e5;
       if (v > mv) { mv = v; mejor = e; }
@@ -728,7 +742,7 @@
           const an = Math.atan2(o.y - t.y, o.x - t.x), ex = t.x + Math.cos(an) * s.alcance, ey = t.y + Math.sin(an) * s.alcance;
           let n = 0;
           for (const q of cand) if (distSegmento(q.x, q.y, t.x, t.y, ex, ey) <= ancho) n++;
-          const v = n * 1e5 + o.dist / largoDe(o) * 1e4;
+          const v = n * 1e5 + 1e4 - (largoDe(o) - o.dist);
           if (v > mejorV) { mejorV = v; mejorAng = an; }
         }
         t.ang = mejorAng;
@@ -870,7 +884,7 @@
     alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2 }
   };
   const ANCHO_CAMINO = 24;
-  let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntrada = null, txtBase = null, TM = null;
+  let escena = null, gDin = null, txtJefe = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
   let flotantes = [];
 
   // Números "al azar" repetibles: el terreno sale igual en cada partida
@@ -892,9 +906,10 @@
     if (anchoBorde) g.lineStyle(anchoBorde, borde, alfa).strokePoints(out, true, true);
   }
   const caja = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-  function anguloEn(d) {
-    for (const t of TRAMOS) if (d <= t.ini + t.l) return Math.atan2(t.b.y - t.a.y, t.b.x - t.a.x);
-    const u = TRAMOS[TRAMOS.length - 1];
+  function anguloEn(d, ruta) {
+    const tr = RUTAS[ruta || 0].tramos;
+    for (const t of tr) if (d <= t.ini + t.l) return Math.atan2(t.b.y - t.a.y, t.b.x - t.a.x);
+    const u = tr[tr.length - 1];
     return Math.atan2(u.b.y - u.a.y, u.b.x - u.a.x);
   }
 
@@ -920,7 +935,7 @@
 
   function bandaCamino(g, ancho, color, alfa) {
     g.fillStyle(color, alfa);
-    for (const t of TRAMOS) {
+    for (const t of TODOS) {
       const x1 = Math.min(t.a.x, t.b.x) - ancho / 2, y1 = Math.min(t.a.y, t.b.y) - ancho / 2;
       g.fillRect(x1, y1, Math.abs(t.b.x - t.a.x) + ancho, Math.abs(t.b.y - t.a.y) + ancho);
     }
@@ -937,6 +952,11 @@
       suelo: 0xe3ebf1, claro: 0xf8fcff, oscuro: 0xc3d2de, ondas: true,
       grano: [0x9db4c6, 0xffffff], ruta: 0x93a2af, rutaBorde: 0x6e7e8c, huella: 0x7b8a97, rutaGrano: [0x5f6f7d, 0xdfe8ef],
       roca: 0x5d6770, rocaLuz: 0xf4f9fc, mata: [0x7fb0cc, 0xa9cfe3], texto: '#3d5266', polvo: [0xffffff, 0xbcd0de]
+    },
+    selva: {
+      suelo: 0x4f7a34, claro: 0x6b9a45, oscuro: 0x35592a, ondas: false, hojas: true,
+      grano: [0x2a4a1c, 0x8fbf5a], ruta: 0x7a5a36, rutaBorde: 0x553d22, huella: 0x4a331c, rutaGrano: [0x3a2814, 0x9a7a4e],
+      roca: 0x5f6a55, rocaLuz: 0x8a9a6e, mata: [0x2f5a1f, 0x8fc456], texto: '#eef7dc', polvo: [0x8a6a42, 0x5f7f3a]
     }
   };
 
@@ -948,8 +968,21 @@
       g.fillStyle(r() < 0.5 ? T.claro : T.oscuro, 0.10 + r() * 0.12)
         .fillEllipse(r() * W, r() * H, 50 + r() * 110, 22 + r() * 46);
     }
+    // Selva: charcos y hojas grandes en el suelo
+    if (T.hojas) {
+      for (let i = 0; i < 9; i++) {
+        const x = r() * W, y = r() * H, a = 14 + r() * 22;
+        g.fillStyle(0x2e4f3a, 0.55).fillEllipse(x, y, a * 1.6, a);
+        g.fillStyle(0x5d8f86, 0.45).fillEllipse(x - 2, y - 2, a * 1.3, a * 0.7);
+      }
+      for (let i = 0; i < 70; i++) {
+        const x = r() * W, y = r() * H, a = r() * Math.PI * 2, l = 7 + r() * 9;
+        poli(g, x, y, a, [[0, 0], [l * 0.5, -l * 0.28], [l, 0], [l * 0.5, l * 0.28]], r() < 0.5 ? 0x3d6b2a : 0x6fa042, 0.75);
+        g.lineStyle(0.8, 0x2a4a1c, 0.6).lineBetween(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l);
+      }
+    }
     // Ondas de duna o de nieve
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < (T.ondas === false ? 0 : 34); i++) {
       const x = r() * W, y = r() * H, largo = 24 + r() * 46;
       g.lineStyle(1.2, T.oscuro, 0.35);
       g.beginPath(); g.moveTo(x, y);
@@ -971,8 +1004,8 @@
     bandaCamino(g, ANCHO_CAMINO - 3, T.ruta, 1);
     bandaCamino(g, 14, T.huella, 0.55);
     bandaCamino(g, 7, T.ruta, 1);
-    for (let d = 0; d < LARGO; d += 3) {
-      const p = posEn(d);
+    for (let ri = 0; ri < RUTAS.length; ri++) for (let d = 0; d < RUTAS[ri].largo; d += 3) {
+      const p = posEn(d, ri);
       g.fillStyle(T.rutaGrano[r() < 0.5 ? 0 : 1], 0.25)
         .fillRect(p.x + (r() - 0.5) * (ANCHO_CAMINO - 4), p.y + (r() - 0.5) * (ANCHO_CAMINO - 4), 1.5, 1.5);
     }
@@ -1012,12 +1045,21 @@
       }
     }
 
-    // Entrada: barreras a ambos lados del camino
-    const ini = posEn(C / 2), fin = PUNTOS[PUNTOS.length - 1];
-    for (const lado of [-1, 1]) {
-      const by = ini.y + lado * (ANCHO_CAMINO / 2 + 5);
-      g.fillStyle(COL.sombra, 0.25).fillRect(2, by - 1, 14, 5);
-      for (let k = 0; k < 4; k++) g.fillStyle(k % 2 ? 0xf2f2f2 : 0xc0392b, 1).fillRect(k * 3.5, by - 3, 3.5, 5);
+    // Entradas: barreras a ambos lados del camino, en el borde por donde entra cada ruta (izquierda o arriba)
+    const fin = PUNTOS[PUNTOS.length - 1];
+    for (const R of RUTAS) {
+      const p0 = R.puntos[0], p1 = R.puntos[1], horiz = Math.abs(p1.x - p0.x) >= Math.abs(p1.y - p0.y);
+      for (const lado of [-1, 1]) {
+        if (horiz) {
+          const by = p0.y + lado * (ANCHO_CAMINO / 2 + 5);
+          g.fillStyle(COL.sombra, 0.25).fillRect(2, by - 1, 14, 5);
+          for (let k = 0; k < 4; k++) g.fillStyle(k % 2 ? 0xf2f2f2 : 0xc0392b, 1).fillRect(k * 3.5, by - 3, 3.5, 5);
+        } else {
+          const bx = p0.x + lado * (ANCHO_CAMINO / 2 + 5);
+          g.fillStyle(COL.sombra, 0.25).fillRect(bx - 1, 2, 5, 14);
+          for (let k = 0; k < 4; k++) g.fillStyle(k % 2 ? 0xf2f2f2 : 0xc0392b, 1).fillRect(bx - 3, k * 3.5, 5, 3.5);
+        }
+      }
     }
 
     // Base: búnker de hormigón en el borde derecho
@@ -1037,8 +1079,15 @@
     TM = TEMAS[MAPA.tema] || TEMAS.desierto;
     gFondo.clear();
     dibujarFondo(gFondo);
-    const ini = posEn(C / 2), fin = PUNTOS[PUNTOS.length - 1];
-    txtEntrada.setPosition(4, ini.y - 30).setColor(TM.texto);
+    const fin = PUNTOS[PUNTOS.length - 1];
+    // Un rótulo "ENTRADA" por ruta: sobre el camino si entra por la izquierda, al lado si entra por arriba
+    for (const o of txtEntradas) o.destroy();
+    txtEntradas = RUTAS.map(R => {
+      const p0 = R.puntos[0], p1 = R.puntos[1], horiz = Math.abs(p1.x - p0.x) >= Math.abs(p1.y - p0.y);
+      const o = escena.add.text(0, 0, 'ENTRADA', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: TM.texto }).setResolution(ESC);
+      if (horiz) o.setPosition(4, p0.y - 30); else o.setPosition(p0.x + 20, 3);
+      return o;
+    });
     txtBase.setPosition(W - 3, fin.y - 36).setColor(TM.texto);
   }
 
@@ -1227,7 +1276,7 @@
   function dibujarEnemigo(g, e) {
     const x = e.x, y = e.y, blind = e.tipo === 'blindado', jefe = !!e.def.jefe;
     // Giro suave en las curvas (solo visual)
-    const meta = recto(e.def) ? AIRE.ang : anguloEn(e.dist);
+    const meta = recto(e.def) ? AIRE.ang : anguloEn(e.dist, e.ruta);
     if (e.va == null) e.va = meta;
     let dif = meta - e.va;
     while (dif > Math.PI) dif -= Math.PI * 2;
@@ -1488,7 +1537,6 @@
       cam.centerOn(W / 2, H / 2);
       gFondo = this.add.graphics();
       const estilo = { fontFamily: 'system-ui, sans-serif', fontSize: '8px', fontStyle: 'bold', color: '#5a3d1a' };
-      txtEntrada = this.add.text(0, 0, 'ENTRADA', estilo).setResolution(ESC);
       txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(ESC);
       pintarMapa();
       gDin = this.add.graphics().setDepth(2);
@@ -1757,7 +1805,7 @@
       b.disabled = !abierto;
       const estado = !abierto ? 'Completa ' + D.mapas[m.requiere].nombre
         : hecho ? 'Completado · ' + (G.guardado.mejor[id] || 0) + ' vidas' : 'Sin completar';
-      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + ' · ' + (m.totalOleadas || m.oleadas.length) + ' oleadas</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
+      b.innerHTML = '<b>' + m.nombre + '</b><span>' + m.dificultad + (m.caminos ? ' · ' + m.caminos.length + ' entradas' : '') + '</span><span' + (hecho && abierto ? ' class="ok"' : '') + '>' + estado + '</span>';
       b.addEventListener('click', () => { mapaElegido = id; pintarSelector(); pintarModos(); });
       cont.appendChild(b);
     }

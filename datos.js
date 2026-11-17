@@ -5,7 +5,7 @@
 const DATOS = {
   nombre: 'Tower Defense Desert Zone',
   autor: 'Mauricio Rodríguez',
-  version: '0.8',
+  version: '0.9',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -459,6 +459,50 @@ const DATOS = {
         /* 28 */ [{ tipo: 'soldado', n: 32, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 16, cada: 0.5, desde: 4 }],
         /* 29 */ [{ tipo: 'blindado', n: 20, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 20, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 6 }],
         /* 30 JEFE */ [{ tipo: 'soldado', n: 20, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 12, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 14, cada: 0.5, desde: 12 }]
+      ]
+    },
+    selva: {
+      nombre: 'Selva', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
+      totalOleadas: 50,
+      escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
+      enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
+      // DOS ENTRADAS: una por la izquierda y otra por arriba. Se juntan en la columna 6 y siguen juntas a la base.
+      // Los enemigos se reparten por turno entre las dos. Oleadas: las del ártico con 20% más de enemigos.
+      caminos: [
+        [[-1, 2], [3, 2], [3, 6], [6, 6], [6, 9], [2, 9], [2, 11], [11, 11]],
+        [[8, -1], [8, 4], [6, 4], [6, 9], [2, 9], [2, 11], [11, 11]]
+      ],
+      oleadas: [
+        /*  1 */ [{ tipo: 'soldado', n: 10,  cada: 1.0 }],
+        /*  2 */ [{ tipo: 'soldado', n: 12, cada: 0.9 }],
+        /*  3 */ [{ tipo: 'soldado', n: 10,  cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 5, cada: 0.6, desde: 5 }],
+        /*  4 */ [{ tipo: 'corredor', n: 7, cada: 0.5, desde: 0 }, { tipo: 'dron', n: 4, cada: 1.5, desde: 4 }],
+        /*  5 */ [{ tipo: 'blindado', n: 4, cada: 2.5, desde: 0 }, { tipo: 'soldado', n: 10, cada: 0.8, desde: 2 }],
+        /*  6 */ [{ tipo: 'corredor', n: 12, cada: 0.45, desde: 0 }, { tipo: 'dron', n: 5, cada: 1.2, desde: 3 }],
+        /*  7 */ [{ tipo: 'blindado', n: 6, cada: 2.0, desde: 0 }, { tipo: 'dron', n: 7, cada: 1.0, desde: 4 }],
+        /*  8 */ [{ tipo: 'soldado', n: 19, cada: 0.55, desde: 0 }, { tipo: 'corredor', n: 10, cada: 0.5, desde: 4 }],
+        /*  9 */ [{ tipo: 'blindado', n: 7, cada: 1.8, desde: 0 }, { tipo: 'dron', n: 10, cada: 0.9, desde: 3 }],
+        /* 10 JEFE */ [{ tipo: 'soldado', n: 12, cada: 0.8, desde: 0 }, { tipo: 'jefe', n: 1, cada: 1, desde: 4 }, { tipo: 'corredor', n: 7, cada: 0.5, desde: 8 }, { tipo: 'dron', n: 5, cada: 1.0, desde: 10 }],
+        /* 11 */ [{ tipo: 'soldado', n: 24, cada: 0.5, desde: 0 }, { tipo: 'dron', n: 10, cada: 0.8, desde: 3 }],
+        /* 12 */ [{ tipo: 'blindado', n: 10, cada: 1.6, desde: 0 }, { tipo: 'corredor', n: 12, cada: 0.45, desde: 5 }],
+        /* 13 */ [{ tipo: 'corredor', n: 17, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 12, cada: 0.7, desde: 2 }],
+        /* 14 */ [{ tipo: 'soldado', n: 29, cada: 0.4, desde: 0 }, { tipo: 'blindado', n: 5, cada: 2.0, desde: 3 }],
+        /* 15 */ [{ tipo: 'blindado', n: 12, cada: 1.4, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.7, desde: 4 }],
+        /* 16 */ [{ tipo: 'soldado', n: 24, cada: 0.45, desde: 0 }, { tipo: 'corredor', n: 14, cada: 0.4, desde: 3 }, { tipo: 'dron', n: 7, cada: 1.0, desde: 6 }],
+        /* 17 */ [{ tipo: 'blindado', n: 14, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 10, cada: 0.5, desde: 6 }],
+        /* 18 */ [{ tipo: 'soldado', n: 31, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 17, cada: 0.6, desde: 4 }],
+        /* 19 */ [{ tipo: 'blindado', n: 14, cada: 1.3, desde: 0 }, { tipo: 'corredor', n: 19, cada: 0.4, desde: 2 }, { tipo: 'dron', n: 12, cada: 0.7, desde: 6 }],
+        /* 20 JEFE */ [{ tipo: 'soldado', n: 19, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 10, cada: 1.5, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 6 }, { tipo: 'corredor', n: 12, cada: 0.4, desde: 9 }, { tipo: 'dron', n: 12, cada: 0.6, desde: 10 }],
+        /* 21 */ [{ tipo: 'soldado', n: 34, cada: 0.4, desde: 0 }, { tipo: 'dron', n: 14, cada: 0.6, desde: 3 }],
+        /* 22 */ [{ tipo: 'blindado', n: 14, cada: 1.2, desde: 0 }, { tipo: 'corredor', n: 19, cada: 0.4, desde: 4 }],
+        /* 23 */ [{ tipo: 'corredor', n: 24, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 17, cada: 0.6, desde: 2 }],
+        /* 24 */ [{ tipo: 'blindado', n: 19, cada: 1.1, desde: 0 }, { tipo: 'dron', n: 12, cada: 0.8, desde: 5 }],
+        /* 25 */ [{ tipo: 'soldado', n: 36, cada: 0.35, desde: 0 }, { tipo: 'corredor', n: 17, cada: 0.4, desde: 3 }, { tipo: 'dron', n: 12, cada: 0.8, desde: 6 }],
+        /* 26 */ [{ tipo: 'dron', n: 22, cada: 0.5, desde: 0 }, { tipo: 'blindado', n: 14, cada: 1.2, desde: 2 }],
+        /* 27 */ [{ tipo: 'blindado', n: 22, cada: 1.0, desde: 0 }, { tipo: 'corredor', n: 24, cada: 0.35, desde: 5 }],
+        /* 28 */ [{ tipo: 'soldado', n: 38, cada: 0.35, desde: 0 }, { tipo: 'dron', n: 19, cada: 0.5, desde: 4 }],
+        /* 29 */ [{ tipo: 'blindado', n: 24, cada: 0.9, desde: 0 }, { tipo: 'corredor', n: 24, cada: 0.35, desde: 2 }, { tipo: 'dron', n: 17, cada: 0.6, desde: 6 }],
+        /* 30 JEFE */ [{ tipo: 'soldado', n: 24, cada: 0.45, desde: 0 }, { tipo: 'blindado', n: 14, cada: 1.3, desde: 3 }, { tipo: 'jefe', n: 1, cada: 1, desde: 8 }, { tipo: 'corredor', n: 17, cada: 0.4, desde: 11 }, { tipo: 'dron', n: 17, cada: 0.5, desde: 12 }]
       ]
     }
   }
