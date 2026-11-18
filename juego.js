@@ -710,7 +710,7 @@
     const n = G.oleada + 1;
     if (modo !== 'campana' || !gruposDe(n).some(q => q.tipo === 'jefeFinal') || (G.vistos || {}).titan) return;
     G.vistos.titan = true;
-    aviso('Se acerca el Titán: ' + cr(Math.round(vidaEnemigo('jefeFinal', n))) + ' de vida. Gasta tus créditos: mejoras de daño y torres de un solo objetivo (láser, rayo).', true);
+    aviso('Se acerca el Titán: ' + cr(Math.round(vidaEnemigo('jefeFinal', n))) + ' de vida; si llega a la base te deja con 1 vida. Gasta tus créditos: mejoras de daño y torres de un solo objetivo (láser, rayo).', true);
   }
   function conJefes(grupos, n) {
     const j = MAPA.jefes;
@@ -1215,11 +1215,14 @@
       if (e.congelado > 0 || e.aturdido > 0) continue;
       e.dist += e.def.vel * (1 - e.lento) * dt;
       if (e.dist >= largoDe(e)) {
-        const quita = e.def.vidas || 1;
+        // El Titán que llega a la base deja al jugador con 1 vida (sobrevive, pero no es una victoria limpia)
+        const titan = e.tipo === 'jefeFinal';
+        const quita = titan ? Math.max(0, G.vidas - 1) : (e.def.vidas || 1);
+        if (titan) G.est.titanEscapo = true;
         G.vidas -= quita;
         G.est.vidasPerdidas += Math.min(quita, Math.max(0, G.vidas + quita));
         SON.sfx('vida');
-        aviso(e.def.jefe ? '¡El ' + e.def.nombre + ' llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base');
+        aviso(titan ? '¡El Titán llegó a la base! Te deja con 1 vida' : e.def.jefe ? '¡El ' + e.def.nombre + ' llegó a la base! −' + quita + ' vidas' : 'Un enemigo llegó a la base', titan);
         resolverEnemigo(e);
         continue;
       }
@@ -3210,7 +3213,7 @@
     const min = Math.floor(e.seg / 60), seg = Math.floor(e.seg % 60);
     const invertido = e.gConstruir + e.gMejoras + e.gMover + e.gFusion;
     const enOleada = n => n ? 'oleada ' + n : 'no hubo';
-    $('resTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
+    $('resTitulo').textContent = gano ? (e.titanEscapo ? 'Base defendida (el Titán escapó)' : 'Base defendida') : 'Base destruida';
     $('resTitulo').className = gano ? 'gano' : 'perdio';
     $('resSub').textContent = MAPA.nombre + ' · ' + (modo === 'infinito' ? 'modo infinito' : 'campaña') + ' · ' +
       (modo === 'infinito' ? 'llegaste a la oleada ' + G.oleada + (esRecord ? ' · ¡nuevo récord!' : '')
@@ -3251,7 +3254,7 @@
   function mostrarFinal() {
     mostrar($('veloContinuar'), false);
     const gano = G.fase === 'victoria';
-    $('veloTitulo').textContent = gano ? 'Base defendida' : 'Base destruida';
+    $('veloTitulo').textContent = gano ? (G.est && G.est.titanEscapo ? 'Base defendida (el Titán escapó)' : 'Base defendida') : 'Base destruida';
     $('veloSub').textContent = MAPA.nombre + ' · ' + (modo === 'infinito' ? 'modo infinito · llegaste a la oleada ' + G.oleada + (esRecord ? ' · ¡nuevo récord!' : ' · récord: ' + (G.guardado.recordInfinito[mapaId] || 0))
       : gano ? 'superaste las ' + TOTAL_OLEADAS + ' oleadas' : 'caíste en la oleada ' + G.oleada + ' de ' + TOTAL_OLEADAS);
     // Tras ganar, deja elegido el escenario que se acaba de abrir, si hay uno
@@ -3401,7 +3404,7 @@
         notas.push('Aparece en: ' + donde.join(', ') + '.');
       }
       if (e.noCongela) notas.push(e.especial ? 'No se puede congelar ni frenar con frío.' : 'No se puede congelar ni aturdir.');
-      h += '<div class="mcard"><div class="mcab"><div><b>' + e.nombre + '</b><span>Vida ' + cr(e.vida) + ' · velocidad ' + e.vel + ' · premio ' + e.premio + 'cr · quita ' + (e.vidas || 1) + (e.vidas > 1 ? ' vidas' : ' vida') + '</span></div></div>' +
+      h += '<div class="mcard"><div class="mcab"><div><b>' + e.nombre + '</b><span>Vida ' + cr(e.vida) + ' · velocidad ' + e.vel + ' · premio ' + e.premio + 'cr · ' + (id === 'jefeFinal' ? 'si llega a la base te deja con 1 vida' : 'quita ' + (e.vidas || 1) + (e.vidas > 1 ? ' vidas' : ' vida')) + '</span></div></div>' +
         (notas.length ? '<ul><li>' + notas.join('</li><li>') + '</li></ul>' : '<p>Sin resistencias ni debilidades.</p>') + '</div>';
     }
     return h;
