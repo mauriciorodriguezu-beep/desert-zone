@@ -712,7 +712,7 @@
   // Multiplicador extra de vida: refuerzo desde cierta oleada y, en modo infinito, crecimiento acumulado
   function multVida(n) {
     const r = D.oleada.refuerzo, inf = D.infinito;
-    let m = 1;
+    let m = 1 + (MAPA.vidaExtra || 0);   // dificultad extra fija del escenario (0.10 = +10% de vida)
     if (r && n >= r.desde) {
       // curva cuadrática: "extra" en la oleada "desde" y "extraEn" en la oleada "hasta"; después sigue creciendo
       const c = r.hasta > r.desde ? ((r.extraEn || r.extra) - r.extra) / ((r.hasta - r.desde) * (r.hasta - r.desde)) : 0;
@@ -3190,7 +3190,7 @@
   function manualEnemigos() {
     const esc = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
     const rf = D.oleada.refuerzo;
-    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además un refuerzo de vida que parte en ' + pct(rf.extra) + ' y crece cada vez más rápido, hasta ' + pct(rf.extraEn) + ' en la oleada ' + rf.hasta + '.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
+    let h = '<p class="mnota">La vida indicada es la de la oleada 1. En ' + MAPA.nombre + ' sube ' + pct(esc) + ' por cada oleada.' + (MAPA.vidaExtra ? ' Además, en este escenario todos los enemigos tienen ' + pct(MAPA.vidaExtra) + ' más de vida.' : '') + (rf ? ' Desde la oleada ' + rf.desde + ' todos tienen además un refuerzo de vida que parte en ' + pct(rf.extra) + ' y crece cada vez más rápido, hasta ' + pct(rf.extraEn) + ' en la oleada ' + rf.hasta + '.' : '') + ' En modo infinito, pasada la oleada ' + D.infinito.desde + ', suben otro ' + pct(D.infinito.extraPorOleada) + ' acumulado por oleada.</p>';
     for (const id in D.enemigos) {
       const e = D.enemigos[id], notas = [];
       if (e.aereo) notas.push('Vuela sobre el mismo camino que las tropas de tierra. Solo le disparan las torres que atacan aire y el frío no le afecta.');

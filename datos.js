@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.21.1',
+  version: '0.22.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -519,6 +519,7 @@ const DATOS = {
      Aquí van escritas las oleadas 1 a 30; de la 31 en adelante se generan (bloque "generador").
      La vida de todos los enemigos, jefe incluido, crece con el número de oleada (oleada.escalaVida);
      un mapa puede traer su propio "escalaVida".
+     vidaExtra: porcentaje fijo de vida extra para todos los enemigos del escenario (0.10 = +10%).
      tema: aspecto del terreno (desierto o nieve). requiere: escenario que hay que completar antes. */
   mapas: {
     desierto: {
@@ -565,6 +566,7 @@ const DATOS = {
       nombre: 'Distrito Cero', dificultad: 'Medio', rasgo: 'cruce', tema: 'ciudad',
       lore: { intro: 'Distrito Cero, la ciudad donde despertó TERMINUS. Sus calles se cruzan: las máquinas pasarán dos veces por el mismo punto.', victoria: 'Distrito Cero resiste. Bajo sus ruinas estaba el fragmento de la ciudad.' },
       totalOleadas: 50,
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
       escalaVida: 0.30,                           // el cruce deja atacar dos tramos a la vez: la vida sube algo más que en el desierto
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // CAMINO QUE SE CRUZA: entra por la izquierda en la fila 6, sube, vuelve por la fila 2 y baja por la
@@ -611,6 +613,7 @@ const DATOS = {
       nombre: 'Estación Glaciar', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
       lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia otro fragmento del código.', victoria: 'El fragmento del hielo está descifrado. TERMINUS empieza a mostrar debilidades.' },
       totalOleadas: 50,
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [5, 1], [5, 5], [10, 5], [10, 10], [2, 10], [2, 13], [13, 13]],
@@ -652,6 +655,7 @@ const DATOS = {
       nombre: 'Refugio Verde', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
       lore: { intro: 'Refugio Verde, oculto en la selva. TERMINUS lo atacará por dos frentes.', victoria: 'El fragmento de la selva está a salvo. Cuando las cuatro bases resistan, el Núcleo quedará expuesto.' },
       totalOleadas: 50,
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
       escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // DOS ENTRADAS: una por la izquierda y otra por arriba. Se juntan en la columna 6 y siguen juntas a la base.
@@ -699,6 +703,7 @@ const DATOS = {
       requiere: ['desierto', 'ciudad', 'artico', 'selva'],   // se abre al completar los otros cuatro
       lore: { intro: 'El Núcleo de TERMINUS. Con los cuatro fragmentos, el equipo llegó al centro para apagarla; sus máquinas convergen desde todas partes.', victoria: 'TERMINUS se apagó. La humanidad tiene una última esperanza.' },
       totalOleadas: 50,
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
       escalaVida: 0.52,                           // espiral muy larga y el jugador llega con torres combo desbloqueadas: los enemigos aguantan mucho más
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // ESPIRAL HACIA EL CENTRO: entra por arriba a la izquierda y da dos vueltas hasta la base, al centro del mapa.
