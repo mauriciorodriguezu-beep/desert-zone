@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.24.4',
+  version: '0.25.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -578,6 +578,7 @@ const DATOS = {
       elites: 0.01,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
       escalaVida: 0.45,                           // el cruce deja atacar dos tramos a la vez: la vida sube bastante más que en el desierto (0.30 → 0.38 → 0.45 en v0.24.3)
       escalaJefeFinal: 0.30,                      // el Titán sigue creciendo como antes (v0.24.1)
+      oleadasParejas: true,                       // desde la 31, las oleadas livianas traen además blindados
       // vetoCruce: 62,                           // (quitado en v0.24.3: a Mauricio no le gustó) radio en px de escombros sin construir alrededor del cruce
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // CAMINO QUE SE CRUZA: entra por la izquierda en la fila 6, sube, vuelve por la fila 2 y baja por la
@@ -630,7 +631,9 @@ const DATOS = {
       premioMult: 0.90,                            // premio por enemigo: baja de a poco hasta 90% entre las oleadas 10 y 40
       jefes: { subjefe: 0.6, colosos: [1, 2] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
       elites: 0.01,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
-      escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
+      escalaVida: 0.42,                           // la vida sube 42% por oleada (0.35 → 0.42 en v0.25; en el desierto, 27%)
+      escalaJefeFinal: 0.35,                      // el Titán sigue creciendo como antes
+      oleadasParejas: true,                       // desde la 31, las oleadas livianas traen además blindados
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [5, 1], [5, 5], [10, 5], [10, 10], [2, 10], [2, 13], [13, 13]],
       especiales: [{ tipo: 'calefactor', desde: 8, cada: 3, n: 1, mas: 10 }],
@@ -677,7 +680,9 @@ const DATOS = {
       premioMult: 0.85,                            // premio por enemigo: baja de a poco hasta 85% entre las oleadas 10 y 40
       jefes: { subjefe: 0.6, colosos: [1, 3] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
       elites: 0.015,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
-      escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
+      escalaVida: 0.38,                           // 38% por oleada (0.30 → 0.38 en v0.25): además están las dos entradas y 20% más de enemigos
+      escalaJefeFinal: 0.30,                      // el Titán sigue creciendo como antes
+      oleadasParejas: true,                       // desde la 31, las oleadas livianas traen además blindados
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // DOS ENTRADAS: una por la izquierda y otra por arriba. Se juntan en la columna 6 y siguen juntas a la base.
       // Los enemigos se reparten por turno entre las dos. Oleadas: las del ártico con 20% más de enemigos.
@@ -730,7 +735,9 @@ const DATOS = {
       premioMult: 0.80,                            // premio por enemigo: baja de a poco hasta 80% entre las oleadas 10 y 40
       jefes: { subjefe: 0.6, colosos: [2, 3] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
       elites: 0.02,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
-      escalaVida: 0.52,                           // espiral muy larga y el jugador llega con torres combo desbloqueadas: los enemigos aguantan mucho más
+      escalaVida: 0.60,                           // espiral muy larga y el jugador llega con torres de fusión: los enemigos aguantan mucho más (0.52 → 0.60 en v0.25)
+      escalaJefeFinal: 0.52,                      // el Titán sigue creciendo como antes
+      oleadasParejas: true,                       // desde la 31, las oleadas livianas traen además blindados
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // ESPIRAL HACIA EL CENTRO: entra por arriba a la izquierda y da dos vueltas hasta la base, al centro del mapa.
       // Entre vuelta y vuelta quedan dos celdas libres para torres. Oleadas: las de Refugio Verde con 15% más enemigos.

@@ -768,6 +768,9 @@
         if (hay('corredor')) out.push({ tipo: 'corredor', n: R(14), cada: 0.4, desde: 5 });
         if (hay('dron')) out.push({ tipo: 'dron', n: R(12), cada: 0.6, desde: 6 });
     }
+    // "oleadasParejas" (datos.js): el enjambre de soldados y el ataque rápido eran mucho más livianos que el resto
+    // y regalaban créditos; en esos escenarios llevan además una columna blindada
+    if (MAPA.oleadasParejas && (n % 5 === 1 || n % 5 === 3)) out.push({ tipo: 'blindado', n: R(10), cada: Math.max(0.6, 1.2 / raiz), desde: 4 });
     return out;
   }
   // Multiplicador extra de vida: refuerzo desde cierta oleada y, en modo infinito, crecimiento acumulado
