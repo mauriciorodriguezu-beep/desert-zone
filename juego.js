@@ -454,8 +454,16 @@
   // La base va en el borde derecho, salvo que el camino termine dentro del mapa (espiral): ahí es un búnker redondo
   const RADIO_BASE = 26;
   const baseCentral = () => { const f = PUNTOS[PUNTOS.length - 1]; return f.x < W - C && f.x > C && f.y > C && f.y < H - C; };
+  // Escombros alrededor de los cruces ("vetoCruce" en datos.js = radio en px): ahí no se construye
+  let vetoCache = null;
+  function crucesVetados() {
+    if (!MAPA.vetoCruce) return [];
+    if (!vetoCache || vetoCache.id !== mapaId) vetoCache = { id: mapaId, p: celdasCruce().map(([c, f]) => ({ x: c * C + C / 2, y: f * C + C / 2 })) };
+    return vetoCache.p;
+  }
   function puedeConstruir(x, y) {
     if (x < MEDIA || y < MEDIA || x > W - MEDIA || y > H - MEDIA) return false;
+    for (const q of crucesVetados()) if (Math.hypot(x - q.x, y - q.y) < MAPA.vetoCruce) return false;
     for (const t of TODOS) if (distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < COLOC.claroCamino) return false;
     const fin = PUNTOS[PUNTOS.length - 1];
     if (baseCentral()) { if (Math.hypot(x - fin.x, y - fin.y) < RADIO_BASE + MEDIA) return false; }
@@ -691,6 +699,19 @@
   }
   // Jefes del escenario ("jefes" en datos.js): Colosos en cantidad variable en las oleadas de jefe y un
   // subjefe (Coloso con menos vida) a mitad de cada decena. La oleada final no cambia.
+  // Antes de la oleada del Titán: aviso con su vida para que nadie llegue desprevenido
+  function vidaEnemigo(tipo, n) {
+    const def = D.enemigos[tipo];
+    let escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
+    if (tipo === 'jefeFinal' && MAPA.escalaJefeFinal != null) escala = MAPA.escalaJefeFinal;
+    return def.vida * (1 + escala * (n - 1)) * multVida(n);
+  }
+  function avisoTitan() {
+    const n = G.oleada + 1;
+    if (modo !== 'campana' || !gruposDe(n).some(q => q.tipo === 'jefeFinal') || (G.vistos || {}).titan) return;
+    G.vistos.titan = true;
+    aviso('Se acerca el Titán: ' + cr(Math.round(vidaEnemigo('jefeFinal', n))) + ' de vida. Gasta tus créditos: mejoras de daño y torres de un solo objetivo (láser, rayo).', true);
+  }
   function conJefes(grupos, n) {
     const j = MAPA.jefes;
     if (!j || grupos.some(q => q.tipo === 'jefeFinal')) return grupos;
@@ -804,7 +825,8 @@
   // "desde" (opcional): sale en ese punto del camino en vez de la entrada (crías de la Nodriza)
   function crearEnemigo(tipo, oleada, desde, extra) {
     const def = D.enemigos[tipo];
-    const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
+    let escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
+    if (tipo === 'jefeFinal' && MAPA.escalaJefeFinal != null) escala = MAPA.escalaJefeFinal;   // el Titán puede crecer distinto
     const elite = !!(extra && extra.elite), mg = (extra && extra.mult) || 1;
     const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada) * (desde && desde.mult || 1) * mg * (elite ? D.elite.vida : 1);
     // Con varias entradas, los enemigos se reparten por turno entre ellas
@@ -1419,7 +1441,7 @@
     if (G.vidas <= 0) { G.vidas = 0; terminar('derrota'); return; }
     if (!G.generando && !G.enemigos.length && G.oleada > 0) {
       if (G.oleada >= TOTAL_OLEADAS) { terminar('victoria'); return; }
-      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = OL('esperaSeg'); G.ultTic = 0; guardarPartida(); }
+      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = OL('esperaSeg'); G.ultTic = 0; avisoTitan(); guardarPartida(); }
       else {
         G.cuenta -= dt;
         if (G.cuenta <= 0) iniciarOleada(false);
@@ -1704,6 +1726,20 @@
           g.fillRect(q.x + k * 4 - 1, q.y - m - 7, 2, 5); g.fillRect(q.x + k * 4 - 1, q.y + m + 2, 2, 5);
           g.fillRect(q.x - m - 7, q.y + k * 4 - 1, 5, 2); g.fillRect(q.x + m + 2, q.y + k * 4 - 1, 5, 2);
         }
+      }
+    }
+    // Escombros en la zona sin construir alrededor del cruce (fuera de la calle)
+    for (const q of crucesVetados()) {
+      const R = MAPA.vetoCruce;
+      g.lineStyle(1.6, 0xd9a92e, 0.7);
+      for (let a = 0; a < Math.PI * 2; a += 0.35) g.lineBetween(q.x + Math.cos(a) * R, q.y + Math.sin(a) * R, q.x + Math.cos(a + 0.17) * R, q.y + Math.sin(a + 0.17) * R);
+      for (let i = 0; i < 150; i++) {
+        const a = r() * Math.PI * 2, d = ANCHO_CAMINO / 2 + 4 + r() * (R - ANCHO_CAMINO / 2 - 8);
+        const x = q.x + Math.cos(a) * d, y = q.y + Math.sin(a) * d;
+        if (TODOS.some(t => distSegmento(x, y, t.a.x, t.a.y, t.b.x, t.b.y) < ANCHO_CAMINO / 2 + 3)) continue;
+        const s2 = 2.5 + r() * 5.5, tono = [0x6b6258, 0x857a6c, 0x4f4740, 0x9a8f80][Math.floor(r() * 4)];
+        g.fillStyle(0x000000, 0.25).fillRect(x - s2 / 2 + 1, y - s2 / 2 + 1, s2, s2 * 0.8);
+        g.fillStyle(tono, 0.95).fillRect(x - s2 / 2, y - s2 / 2, s2, s2 * 0.8);
       }
     }
 
@@ -3245,7 +3281,8 @@
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
       '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p><p><b>Adelantar con enemigos en el mapa:</b> puedes llamar la siguiente oleada aunque la actual siga en curso, hasta tener ' + o.maxEnJuego + ' oleadas en juego a la vez. Cada llamada da ' + o.bonoPorEnJuego + ' créditos por cada oleada que ya estaba en juego, y se cobran al limpiar la oleada que llamaste.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
-      (MAPA.jefes || MAPA.elites ? '<h3>Sorpresas de este escenario</h3><p>' +
+      (MAPA.jefes || MAPA.elites || MAPA.vetoCruce ? '<h3>Sorpresas de este escenario</h3><p>' +
+        (MAPA.vetoCruce ? 'Alrededor del cruce hay <b>escombros</b> (círculo amarillo): ahí no se puede construir. ' : '') +
         (MAPA.jefes ? 'Cada 5 oleadas llega un jefe: a mitad de cada decena un <b>Coloso menor</b> (' + pct(MAPA.jefes.subjefe) + ' de la vida; en la oleada 5, la mitad de eso) en la oleada 10 un Coloso y desde la 20 entre ' + MAPA.jefes.colosos[0] + ' y ' + MAPA.jefes.colosos[1] + ' Colosos; cuántos, varía en cada partida. ' : '') +
         (MAPA.elites && D.elite ? 'Desde la oleada ' + D.elite.desde + ', alrededor del ' + dec(MAPA.elites * 100) + '% de los enemigos sale <b>élite</b>: borde dorado, ' + D.elite.vida + ' veces más vida y ' + D.elite.premio + ' veces el premio.' : '') + '</p>' : '') +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo desde el nivel 0: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>. Las <b>fusiones</b> (botón ★ Fusión) son otra cosa: tres torres al máximo en triángulo; ver pestaña <b>Fusión</b>.</p>' +

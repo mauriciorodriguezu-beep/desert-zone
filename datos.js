@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.24.0',
+  version: '0.24.1',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -576,7 +576,9 @@ const DATOS = {
       premioMult: 0.90,                            // premio por enemigo: baja de a poco hasta 90% entre las oleadas 10 y 40
       jefes: { subjefe: 0.6, colosos: [1, 2] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
       elites: 0.01,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
-      escalaVida: 0.30,                           // el cruce deja atacar dos tramos a la vez: la vida sube algo más que en el desierto
+      escalaVida: 0.38,                           // el cruce deja atacar dos tramos a la vez: la vida sube bastante más que en el desierto (v0.24.1: 0.30 → 0.38)
+      escalaJefeFinal: 0.30,                      // el Titán sigue creciendo como antes (v0.24.1)
+      vetoCruce: 62,                              // radio (px) de escombros alrededor del cruce donde no se construye
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // CAMINO QUE SE CRUZA: entra por la izquierda en la fila 6, sube, vuelve por la fila 2 y baja por la
       // columna 4 cruzando su propio tramo en (4, 6). Oleadas: las del desierto con 10% más enemigos,
