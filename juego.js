@@ -3188,6 +3188,7 @@
   }
 
   function mostrarMenu() {
+    if (actualizacionPendiente) { recargarActualizado(); return; }
     const g = G.guardado;
     $('veloTitulo').textContent = D.nombre;
     $('veloSub').textContent = PRUEBA ? 'MODO PRUEBA · elige un escenario' : 'Elige un escenario';
@@ -3583,7 +3584,21 @@
   conectarBotones();
   pintarSonido();
   mostrarMenu();
-  abrirHistoria();   // cada vez que se abre el juego, la historia antes del menú (se puede saltar)
+  // Cada vez que se abre el juego, la historia antes del menú (se puede saltar). No se repite si la página
+  // se recargó sola por una versión nueva.
+  let saltarIntro = false;
+  try { saltarIntro = sessionStorage.getItem('td_saltarIntro') === '1'; sessionStorage.removeItem('td_saltarIntro'); } catch (e) { /* nada */ }
+  if (!saltarIntro) abrirHistoria();
+  // Versión nueva del juego lista: recarga al tiro si no hay partida en pantalla; si la hay, al volver al menú
+  var actualizacionPendiente = false;   // var: mostrarMenu puede leerla antes de esta línea
+  function recargarActualizado() {
+    try { sessionStorage.setItem('td_saltarIntro', '1'); } catch (e) { /* nada */ }
+    location.reload();
+  }
+  window.alActualizarJuego = () => {
+    const jugando = $('velo').hidden && G.fase === 'jugando' && G.oleada > 0;
+    if (jugando) actualizacionPendiente = true; else recargarActualizado();
+  };
   // Renderizado: WebGL si se puede; "modo compatible" (canvas 2D) si el teléfono pierde el contexto WebGL
   // o si se abre con ?canvas en la dirección. La elección queda guardada en el teléfono.
   let modoCanvas = /[?&]canvas/.test(location.search);
