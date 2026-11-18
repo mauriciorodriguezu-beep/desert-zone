@@ -718,6 +718,9 @@
       const c = r.hasta > r.desde ? ((r.extraEn || r.extra) - r.extra) / ((r.hasta - r.desde) * (r.hasta - r.desde)) : 0;
       m *= 1 + r.extra + c * (n - r.desde) * (n - r.desde);
     }
+    // Refuerzo propio del escenario: crece en curva desde 0 en la oleada "desde" hasta "extraEn" en la oleada "hasta"
+    const rm = MAPA.refuerzo;
+    if (rm && n > rm.desde) { const k = Math.min(n, rm.hasta) - rm.desde, L = rm.hasta - rm.desde; m *= 1 + rm.extraEn * (k * k) / (L * L) + (n > rm.hasta ? rm.extraEn * 2 * (n - rm.hasta) / L : 0); }
     if (modo === 'infinito' && inf && n > inf.desde) m *= Math.pow(1 + inf.extraPorOleada, n - inf.desde);
     return m;
   }
