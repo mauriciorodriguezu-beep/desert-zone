@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.23.0',
+  version: '0.24.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -65,6 +65,10 @@ const DATOS = {
        jefeCada       cada cuántas oleadas aparece un jefe
        jefeExtraCada  en modo infinito se suma un jefe más cada tantas oleadas pasada la base */
   generador: { base: 30, crecimiento: 0.04, jefeCada: 10, jefeExtraCada: 30 },
+
+  // ÉLITES: enemigos normales con borde dorado, "vida" veces más vida y "premio" veces el premio.
+  // Cada escenario dice con qué probabilidad salen (campo "elites"); Puesto Duna no tiene.
+  elite: { desde: 10, vida: 6, premio: 3 },
 
   // MODO INFINITO: pasada la oleada "desde", la vida crece además un porcentaje acumulado por oleada
   infinito: { desde: 50, extraPorOleada: 0.03 },
@@ -566,7 +570,12 @@ const DATOS = {
       nombre: 'Distrito Cero', dificultad: 'Medio', rasgo: 'cruce', tema: 'ciudad',
       lore: { intro: 'Distrito Cero, la ciudad donde despertó TERMINUS. Sus calles se cruzan: las máquinas pasarán dos veces por el mismo punto.', victoria: 'Distrito Cero resiste. Bajo sus ruinas estaba el fragmento de la ciudad.' },
       totalOleadas: 50,
-      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos desde la oleada 1 (v0.22)
+      refuerzo: { desde: 15, hasta: 50, extraEn: 0.50 },   // vida extra que crece en curva: 0 en la oleada 15 → +50% en la 50 (más que el Glaciar: el cruce rinde el doble)
+      ritmo: { esperaSeg: 6, bonoAdelantoPorSeg: 1.5, bonoPorEnJuego: 15, bonoPorOleada: 3 },   // pisa los valores de "oleada" (bonoPorOleada rige desde la oleada 10)
+      premioMult: 0.90,                            // premio por enemigo: baja de a poco hasta 90% entre las oleadas 10 y 40
+      jefes: { subjefe: 0.6, colosos: [1, 2] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
+      elites: 0.01,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
       escalaVida: 0.30,                           // el cruce deja atacar dos tramos a la vez: la vida sube algo más que en el desierto
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // CAMINO QUE SE CRUZA: entra por la izquierda en la fila 6, sube, vuelve por la fila 2 y baja por la
@@ -613,7 +622,12 @@ const DATOS = {
       nombre: 'Estación Glaciar', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
       lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia otro fragmento del código.', victoria: 'El fragmento del hielo está descifrado. TERMINUS empieza a mostrar debilidades.' },
       totalOleadas: 50,
-      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos desde la oleada 1 (v0.22)
+      refuerzo: { desde: 15, hasta: 50, extraEn: 0.30 },   // vida extra que crece en curva: 0 en la oleada 15 → +30% en la 50
+      ritmo: { esperaSeg: 6, bonoAdelantoPorSeg: 1.5, bonoPorEnJuego: 15, bonoPorOleada: 3 },   // pisa los valores de "oleada" (bonoPorOleada rige desde la oleada 10)
+      premioMult: 0.90,                            // premio por enemigo: baja de a poco hasta 90% entre las oleadas 10 y 40
+      jefes: { subjefe: 0.6, colosos: [1, 2] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
+      elites: 0.01,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       camino: [[-1, 1], [5, 1], [5, 5], [10, 5], [10, 10], [2, 10], [2, 13], [13, 13]],
@@ -655,7 +669,12 @@ const DATOS = {
       nombre: 'Refugio Verde', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
       lore: { intro: 'Refugio Verde, oculto en la selva. TERMINUS lo atacará por dos frentes.', victoria: 'El fragmento de la selva está a salvo. Cuando las cuatro bases resistan, el Núcleo quedará expuesto.' },
       totalOleadas: 50,
-      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos desde la oleada 1 (v0.22)
+      refuerzo: { desde: 15, hasta: 50, extraEn: 0.50 },   // vida extra que crece en curva: 0 en la oleada 15 → +50% en la 50
+      ritmo: { esperaSeg: 6, bonoAdelantoPorSeg: 1.5, bonoPorEnJuego: 15, bonoPorOleada: 3 },   // pisa los valores de "oleada" (bonoPorOleada rige desde la oleada 10)
+      premioMult: 0.85,                            // premio por enemigo: baja de a poco hasta 85% entre las oleadas 10 y 40
+      jefes: { subjefe: 0.6, colosos: [1, 3] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
+      elites: 0.015,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
       escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // DOS ENTRADAS: una por la izquierda y otra por arriba. Se juntan en la columna 6 y siguen juntas a la base.
@@ -703,7 +722,12 @@ const DATOS = {
       requiere: ['desierto', 'ciudad', 'artico', 'selva'],   // se abre al completar los otros cuatro
       lore: { intro: 'El Núcleo de TERMINUS. Con los cuatro fragmentos, el equipo llegó al centro para apagarla; sus máquinas convergen desde todas partes.', victoria: 'TERMINUS se apagó. La humanidad tiene una última esperanza.' },
       totalOleadas: 50,
-      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos (subida de dificultad v0.22)
+      vidaExtra: 0.10,                            // +10% de vida a todos los enemigos desde la oleada 1 (v0.22)
+      refuerzo: { desde: 15, hasta: 50, extraEn: 0.70 },   // vida extra que crece en curva: 0 en la oleada 15 → +70% en la 50
+      ritmo: { esperaSeg: 6, bonoAdelantoPorSeg: 1.5, bonoPorEnJuego: 15, bonoPorOleada: 3 },   // pisa los valores de "oleada" (bonoPorOleada rige desde la oleada 10)
+      premioMult: 0.80,                            // premio por enemigo: baja de a poco hasta 80% entre las oleadas 10 y 40
+      jefes: { subjefe: 0.6, colosos: [2, 3] },     // Coloso menor (60% de vida) en la 5, 15, 25…; 1 Coloso en la 10 y desde la 20 Colosos al azar
+      elites: 0.02,                               // probabilidad de que un enemigo normal salga élite (desde la oleada elite.desde)
       escalaVida: 0.52,                           // espiral muy larga y el jugador llega con torres combo desbloqueadas: los enemigos aguantan mucho más
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
       // ESPIRAL HACIA EL CENTRO: entra por arriba a la izquierda y da dos vueltas hasta la base, al centro del mapa.

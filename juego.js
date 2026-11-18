@@ -296,7 +296,19 @@
   const AJ = { creditos: 20000, vida: 100, premio: 100 };
   try { Object.assign(AJ, JSON.parse(localStorage.getItem('td_prueba') || '{}')); } catch (e) { /* nada */ }
   const multPrueba = k => PRUEBA ? AJ[k] / 100 : 1;
-  const premioDe = e => Math.max(0, Math.round(e.def.premio * multPrueba('premio')));
+  // Premio de un enemigo: el de datos.js × élite/subjefe × premio del escenario × modo prueba
+  // El recorte de premio del escenario ("premioMult") entra de a poco: nada hasta la oleada 10, completo desde la 40,
+  // para no ahogar el comienzo y sí quitar la plata que sobra al final.
+  const recortePremio = n => { const pm = MAPA.premioMult || 1; return 1 - (1 - pm) * Math.max(0, Math.min(1, (n - 10) / 30)); };
+  const premioDe = e => Math.max(0, Math.round(e.def.premio * (e.pm || 1) * recortePremio(e.oleada) * multPrueba('premio')));
+  // Valores de ritmo y bonos: el escenario puede traer los suyos en "ritmo"; si no, los de oleada
+  const OL = k => (MAPA && MAPA.ritmo && MAPA.ritmo[k] != null) ? MAPA.ritmo[k] : D.oleada[k];
+  // Azar repetible por partida: el mismo número para la misma semilla, oleada y uso
+  function azarOleada(n, uso) {
+    let h = ((G.semilla || 1) ^ Math.imul(n + 1, 0x9E3779B1) ^ Math.imul(uso + 7, 0x85EBCA6B)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x7FEB352D) >>> 0; h = Math.imul(h ^ (h >>> 15), 0x846CA68B) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
 
   function guardarPartida() {
     if (PRUEBA) return;
@@ -305,7 +317,7 @@
       v: 1, mapa: mapaId, modo, creditos: G.creditos, vidas: G.vidas, oleada: G.oleada, bajas: G.bajas,
       torres: G.torres.map(t => ({ tipo: t.tipo, x: t.x, y: t.y, niv: t.niv, invertido: t.invertido, prioridad: t.prioridad })),
       minas: G.minas.map(m => ({ x: m.x, y: m.y, i: G.torres.indexOf(m.torre), dano: m.dano, radio: m.radio, aturde: m.aturde })).filter(m => m.i >= 0),
-      est: G.est,
+      est: G.est, semilla: G.semilla,
       fecha: Date.now()
     };
     try { localStorage.setItem(CLAVE_PARTIDA, JSON.stringify(p)); } catch (e) { /* sin almacenamiento */ }
@@ -324,7 +336,7 @@
     G.fase = 'jugando';
     G.creditos = p.creditos; G.vidas = p.vidas; G.oleada = p.oleada; G.bajas = p.bajas || 0;
     G.est = Object.assign(estNueva(), p.est || {});
-    G.vistos = {}; G.avisoCombo = (p.torres || []).length > 1;
+    G.vistos = {}; G.avisoCombo = (p.torres || []).length > 1; G.semilla = p.semilla || 1;
     G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0; G.pendientes = {};
     G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = true; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null; G.t = 0;
@@ -340,7 +352,7 @@
       if (t) G.minas.push({ x: m.x, y: m.y, torre: t, dano: m.dano, radio: m.radio, aturde: m.aturde || 0, t0: 0 });
     }
     recalcularSinergias();
-    G.enCuenta = true; G.cuenta = D.oleada.esperaSeg;
+    G.enCuenta = true; G.cuenta = OL('esperaSeg');
     G.guardado.mapa = mapaId; G.guardado.modo = modo;
     limpiarFlotantes();
     refrescarTodo();
@@ -384,7 +396,7 @@
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
-    G.bajas = 0; G.t = 0; G.vistos = {}; G.avisoCombo = false; colaImp = []; impHasta = 0;
+    G.bajas = 0; G.t = 0; G.vistos = {}; G.avisoCombo = false; G.semilla = 1 + Math.floor(Math.random() * 2147483646); colaImp = []; impHasta = 0;
     G.est = estNueva();
     G.guardado.partidas++;
     guardar();
@@ -664,7 +676,7 @@
   function bonoAdelanto() {
     if (G.oleada === 0) return 0;
     const k = enJuego();
-    return k ? k * D.oleada.bonoPorEnJuego : Math.ceil(G.cuenta) * D.oleada.bonoAdelantoPorSeg;
+    return Math.round(k ? k * OL('bonoPorEnJuego') : Math.ceil(G.cuenta) * OL('bonoAdelantoPorSeg'));
   }
   function puedeIniciar() {
     return G.fase === 'jugando' && G.oleada < TOTAL_OLEADAS && enJuego() < D.oleada.maxEnJuego;
@@ -675,7 +687,19 @@
     const lista = MAPA.oleadas[n - 1];
     const final = modo !== 'infinito' && n === TOTAL_OLEADAS;
     const base = lista && (!final || lista.some(q => q.tipo === 'jefeFinal')) ? lista : generarOleada(n, final);
-    return conEspeciales(base, n);
+    return conEspeciales(conJefes(base, n), n);
+  }
+  // Jefes del escenario ("jefes" en datos.js): Colosos en cantidad variable en las oleadas de jefe y un
+  // subjefe (Coloso con menos vida) a mitad de cada decena. La oleada final no cambia.
+  function conJefes(grupos, n) {
+    const j = MAPA.jefes;
+    if (!j || grupos.some(q => q.tipo === 'jefeFinal')) return grupos;
+    if (grupos.some(q => q.tipo === 'jefe')) {
+      const [a, b] = j.colosos, k = n < 20 ? 1 : a + Math.floor(azarOleada(n, 1) * (b - a + 1));   // la oleada 10 trae uno solo
+      return grupos.map(q => q.tipo === 'jefe' ? Object.assign({}, q, { n: Math.max(q.n, k), cada: Math.max(q.cada || 1, 5) }) : q);
+    }
+    if (j.subjefe && n % 10 === 5) return grupos.concat([{ tipo: 'jefe', n: 1, cada: 1, desde: 5, mult: n < 10 ? j.subjefe / 2 : j.subjefe }]);   // en la 5, con la mitad
+    return grupos;
   }
   // Atacantes especiales del escenario: se suman a la oleada desde "desde", cada "cada" oleadas
   function conEspeciales(grupos, n) {
@@ -746,7 +770,7 @@
     let pendiente = 0;
     if (conBono) {
       if (enJuego()) { pendiente = bonoAdelanto(); G.est.adelantos++; }   // se cobra al limpiar esta oleada
-      else { const b = bonoAdelanto(); G.creditos += b; G.est.ganado += b; }
+      else { const b = bonoAdelanto(); G.creditos += b; G.est.ganado += b; G.est.gAdel = (G.est.gAdel || 0) + b; }
     }
     G.oleada++;
     if (pendiente) G.bonoPend[G.oleada] = pendiente;
@@ -755,7 +779,11 @@
     let fin = 0;
     for (const g of grupos) {
       const t0 = g.desde != null ? g.desde : (fin > 0 ? fin + 1 : 0);
-      for (let i = 0; i < g.n; i++) cola.push({ t: t0 + i * g.cada, tipo: g.tipo });
+      for (let i = 0; i < g.n; i++) {
+        const d = D.enemigos[g.tipo], el = MAPA.elites && D.elite && !d.jefe && !d.especial && G.oleada >= D.elite.desde
+          && azarOleada(G.oleada * 1000 + cola.length, 2) < MAPA.elites;
+        cola.push({ t: t0 + i * g.cada, tipo: g.tipo, mult: g.mult, elite: el });
+      }
       fin = Math.max(fin, t0 + (g.n - 1) * g.cada);
     }
     cola.sort((a, b) => a.t - b.t);
@@ -766,19 +794,27 @@
     G.est.maxEnJuego = Math.max(G.est.maxEnJuego, enJuego());
     G.enCuenta = false; G.cuenta = 0;
     SON.sfx(oleadaConJefe(G.oleada) ? 'jefe' : 'oleada');
-    if (oleadaConJefe(G.oleada)) aviso(gruposDe(G.oleada).some(q => q.tipo === 'jefeFinal') ? '¡El Titán de TERMINUS se acerca!' : '¡Un Coloso se acerca!');
+    if (oleadaConJefe(G.oleada)) {
+      const gj = gruposDe(G.oleada), nj = gj.filter(q => q.tipo === 'jefe').reduce((s2, q) => s2 + q.n, 0);
+      aviso(gj.some(q => q.tipo === 'jefeFinal') ? '¡El Titán de TERMINUS se acerca!' : gj.some(q => q.mult) ? '¡Un Coloso menor se acerca!' : nj > 1 ? '¡' + nj + ' Colosos se acercan!' : '¡Un Coloso se acerca!');
+    }
     return true;
   }
 
   // "desde" (opcional): sale en ese punto del camino en vez de la entrada (crías de la Nodriza)
-  function crearEnemigo(tipo, oleada, desde) {
+  function crearEnemigo(tipo, oleada, desde, extra) {
     const def = D.enemigos[tipo];
     const escala = MAPA.escalaVida != null ? MAPA.escalaVida : D.oleada.escalaVida;
-    const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada) * (desde && desde.mult || 1);
+    const elite = !!(extra && extra.elite), mg = (extra && extra.mult) || 1;
+    const vida = def.vida * (1 + escala * (oleada - 1)) * multVida(oleada) * (desde && desde.mult || 1) * mg * (elite ? D.elite.vida : 1);
     // Con varias entradas, los enemigos se reparten por turno entre ellas
     const ruta = desde ? desde.ruta : RUTAS.length > 1 ? (G.rutaSig++ % RUTAS.length) : 0;
     const e = { tipo, def, oleada, vida, vidaMax: vida, dist: desde ? desde.dist : 0, ruta, x: 0, y: 0, lento: 0, fragil: 0, congelado: 0, aturdido: 0, vivo: true,
-      tEsp: Math.random() * 1.5, oculto: false, termico: 0 };
+      tEsp: Math.random() * 1.5, oculto: false, termico: 0, elite, pm: mg * (elite ? D.elite.premio : 1) };
+    if (elite && !(G.vistos || (G.vistos = {})).elite) {
+      G.vistos.elite = true;
+      aviso('¡Enemigo élite! El borde dorado indica ' + D.elite.vida + ' veces más vida y ' + D.elite.premio + ' veces el premio.', true);
+    }
     const p = posDe(e);
     e.x = p.x; e.y = p.y;
     G.enemigos.push(e);
@@ -801,9 +837,11 @@
     e.vivo = false;
     if (--G.pendientes[e.oleada] === 0) {
       const extra = G.bonoPend[e.oleada] || 0;
-      const bono = D.oleada.bonoBase + D.oleada.bonoPorOleada * e.oleada + extra;
+      // El bono por oleada del escenario rige desde la oleada 10; antes, el normal (para no ahogar el comienzo)
+      const bono = OL('bonoBase') + D.oleada.bonoPorOleada * Math.min(e.oleada, 10) + OL('bonoPorOleada') * Math.max(0, e.oleada - 10) + extra;
       G.creditos += bono;
       G.est.ganado += bono; G.est.limpias++;
+      G.est.gOle = (G.est.gOle || 0) + bono - extra; G.est.gAdel = (G.est.gAdel || 0) + extra;
       SON.sfx('limpia');
       delete G.bonoPend[e.oleada];
       aviso('Oleada ' + e.oleada + ' superada · +' + bono + 'cr' + (extra ? ' (incluye ' + extra + ' por adelantar)' : ''));
@@ -819,7 +857,7 @@
     if (e.vida <= 0) {
       const premio = premioDe(e);
       G.creditos += premio;
-      G.est.ganado += premio;
+      G.est.ganado += premio; G.est.gEne = (G.est.gEne || 0) + premio;
       G.est.bajasTipo[e.tipo] = (G.est.bajasTipo[e.tipo] || 0) + 1;
       if (e.def.jefe) G.est.jefes++;
       G.bajas++;
@@ -1110,7 +1148,7 @@
     if (G.generando) {
       for (const sa of G.salidas) {
         sa.t += dt;
-        while (sa.cola.length && sa.cola[0].t <= sa.t) crearEnemigo(sa.cola.shift().tipo, sa.oleada);
+        while (sa.cola.length && sa.cola[0].t <= sa.t) { const c = sa.cola.shift(); crearEnemigo(c.tipo, sa.oleada, null, c); }
       }
       G.salidas = G.salidas.filter(sa => sa.cola.length);
       if (!G.salidas.length) G.generando = false;
@@ -1381,7 +1419,7 @@
     if (G.vidas <= 0) { G.vidas = 0; terminar('derrota'); return; }
     if (!G.generando && !G.enemigos.length && G.oleada > 0) {
       if (G.oleada >= TOTAL_OLEADAS) { terminar('victoria'); return; }
-      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = D.oleada.esperaSeg; guardarPartida(); }
+      if (!G.enCuenta) { G.enCuenta = true; G.cuenta = OL('esperaSeg'); G.ultTic = 0; guardarPartida(); }
       else {
         G.cuenta -= dt;
         if (G.cuenta <= 0) iniciarOleada(false);
@@ -2441,7 +2479,14 @@
       g.lineStyle(2, 0xffffff, 1).strokeRoundedRect(t.x - 18, t.y - 18, 36, 36, 7);
     }
 
-    for (const e of G.enemigos) dibujarEnemigo(g, e);
+    for (const e of G.enemigos) {
+      dibujarEnemigo(g, e);
+      if (e.elite && !e.oculto) {
+        const r = (e.def.jefe ? 20 : e.tipo === 'blindado' || e.tipo === 'nodriza' ? 13 : 10) + 1.5 * Math.sin(G.t * 6 + e.dist * 0.05);
+        g.lineStyle(3, 0x2a1a05, 0.5).strokeCircle(e.x, e.y, r);
+        g.lineStyle(1.6, 0xffd23f, 0.95).strokeCircle(e.x, e.y, r);
+      }
+    }
 
     // Haces de las torres láser
     for (const t of G.torres) {
@@ -2528,6 +2573,7 @@
     // Barra de vida del jefe: va en la página (no en el mapa) para que se vea aunque haya zoom
     const jefe = G.enemigos.find(e => e.def.jefe && e.vivo);
     mostrar($('barraJefe'), !!jefe);
+    document.body.classList.toggle('conJefe', !!jefe);   // el aviso baja para no tapar la barra del jefe
     if (jefe) {
       poner($('barraJefeVida').style, 'width', Math.round(Math.max(0, jefe.vida / jefe.vidaMax) * 100) + '%');
       poner($('barraJefeNombre'), 'textContent', jefe.def.nombre.toUpperCase());
@@ -2942,9 +2988,12 @@
     else if (G.oleada >= TOTAL_OLEADAS) { txt = 'Última oleada'; on = false; }
     else if (enJuego() >= D.oleada.maxEnJuego) { txt = 'Máximo: ' + D.oleada.maxEnJuego + ' oleadas en juego'; on = false; }
     else if (enJuego()) txt = '▶ Adelantar ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' · ' + enJuego() + '/' + D.oleada.maxEnJuego + ' · +' + bonoAdelanto() + 'cr';
-    else txt = '▶ Oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' en ' + Math.ceil(G.cuenta) + ' s · +' + bonoAdelanto() + 'cr';
+    else txt = '▶ Oleada ' + (G.oleada + 1) + (oleadaConJefe(G.oleada + 1) ? ' (JEFE)' : '') + ' en ' + Math.ceil(G.cuenta) + ' s · adelantar +' + bonoAdelanto() + 'cr';
     poner(b, 'textContent', txt);
     poner(b, 'disabled', !on);
+    const urge = on && G.enCuenta && !enJuego() && G.oleada > 0 && G.cuenta <= 3;
+    b.classList.toggle('urge', urge);
+    if (urge && !G.pausa) { const s2 = Math.ceil(G.cuenta); if (s2 !== G.ultTic) { G.ultTic = s2; SON.sfx('mejorar', 0.35); } }
     poner($('btnVel'), 'textContent', '×' + G.vel);
     poner($('btnPausa'), 'textContent', G.pausa ? '▶' : 'II');
     $('btnPausa').classList.toggle('activo', G.pausa);
@@ -3135,7 +3184,7 @@
       dato(min + ':' + String(seg).padStart(2, '0'), 'tiempo de juego', 'sin contar pausas') +
       dato(G.vidas, 'vidas restantes', e.vidasPerdidas + (e.vidasPerdidas === 1 ? ' perdida' : ' perdidas')) +
       dato(cr(G.bajas), 'enemigos eliminados', e.jefes ? e.jefes + ' jefe' + (e.jefes > 1 ? 's' : '') : '') +
-      dato(cr(e.ganado), 'créditos ganados', '') +
+      dato(cr(e.ganado), 'créditos ganados', e.gEne != null ? 'enemigos ' + cr(e.gEne || 0) + ' · oleadas ' + cr(e.gOle || 0) + ' · adelantos ' + cr(e.gAdel || 0) : '') +
       dato(cr(invertido), 'créditos invertidos', e.vendido ? cr(e.vendido) + ' recuperados al vender' : '') +
       dato(e.construidas, 'torres construidas', e.mejoras + ' mejoras') +
       dato(e.fusiones, 'fusiones', 'primera: ' + enOleada(e.primeraFusion)) +
@@ -3187,7 +3236,7 @@
   let manualTab = 'jugar';
 
   function manualJugar() {
-    const o = D.oleada, total = MAPA.totalOleadas || MAPA.oleadas.length, cada = D.generador.jefeCada;
+    const o = { esperaSeg: OL('esperaSeg'), bonoAdelantoPorSeg: OL('bonoAdelantoPorSeg'), bonoPorEnJuego: OL('bonoPorEnJuego'), maxEnJuego: OL('maxEnJuego') }, total = MAPA.totalOleadas || MAPA.oleadas.length, cada = MAPA.jefes ? 5 : D.generador.jefeCada;
     return '<h3>Objetivo</h3><p>Defiende la base. Empiezas con <b>' + D.inicio.vidas + ' vidas</b> y <b>' + D.inicio.creditos + ' créditos</b>. Cada enemigo que llega a la base te quita una vida; los jefes quitan varias. Si llegas a cero, pierdes.</p>' +
       '<h3>Construir</h3><ol><li>Toca una torre en el panel de abajo.</li><li>Toca el lugar del campo donde la quieres. Aparece en transparencia con su alcance.</li><li>Arrástrala para afinar la posición y toca <b>Construir</b>.</li></ol><p>No se puede construir sobre el camino, sobre la base ni encima de otra torre.</p>' +
       '<h3>Mejorar y vender</h3><p>Toca una torre ya construida. Cada torre tiene <b>tres atributos</b> que se mejoran por separado, con tres niveles cada uno. <b>Vender</b> devuelve el ' + pct(D.venta) + ' de todo lo que invertiste en ella.</p>' +
@@ -3196,6 +3245,9 @@
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
       '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p><p><b>Adelantar con enemigos en el mapa:</b> puedes llamar la siguiente oleada aunque la actual siga en curso, hasta tener ' + o.maxEnJuego + ' oleadas en juego a la vez. Cada llamada da ' + o.bonoPorEnJuego + ' créditos por cada oleada que ya estaba en juego, y se cobran al limpiar la oleada que llamaste.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
+      (MAPA.jefes || MAPA.elites ? '<h3>Sorpresas de este escenario</h3><p>' +
+        (MAPA.jefes ? 'Cada 5 oleadas llega un jefe: a mitad de cada decena un <b>Coloso menor</b> (' + pct(MAPA.jefes.subjefe) + ' de la vida; en la oleada 5, la mitad de eso) en la oleada 10 un Coloso y desde la 20 entre ' + MAPA.jefes.colosos[0] + ' y ' + MAPA.jefes.colosos[1] + ' Colosos; cuántos, varía en cada partida. ' : '') +
+        (MAPA.elites && D.elite ? 'Desde la oleada ' + D.elite.desde + ', alrededor del ' + dec(MAPA.elites * 100) + '% de los enemigos sale <b>élite</b>: borde dorado, ' + D.elite.vida + ' veces más vida y ' + D.elite.premio + ' veces el premio.' : '') + '</p>' : '') +
       '<h3>Combos</h3><p>Dos torres pegadas forman un combo desde el nivel 0: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>. Las <b>fusiones</b> (botón ★ Fusión) son otra cosa: tres torres al máximo en triángulo; ver pestaña <b>Fusión</b>.</p>' +
       '<h3>Zoom</h3><p>Pellizca el mapa con dos dedos (o usa la rueda del mouse, o los botones <b>+</b> y <b>−</b> a la derecha) para acercarte. Con zoom, arrastra un dedo para moverte por el mapa. Al construir o mover una torre, arrastrar acomoda la torre y no el mapa.</p>' +
       '<h3>Sonido</h3><p>El botón del parlante, en la barra de arriba, silencia o activa todo. En la pantalla de inicio puedes apagar por separado la <b>música</b> o los <b>efectos</b>. La música se intensifica durante el combate y cuando hay un jefe.</p>' +

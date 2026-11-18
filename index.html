@@ -186,6 +186,11 @@
   #veloPrueba label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--tenue); min-width: 0; }
   #veloPrueba input { width: 100%; min-width: 0; background: var(--caja); color: var(--texto); border: 1px solid var(--linea); border-radius: 6px; padding: 5px 6px; font-size: 14px; }
   #veloPrueba small { grid-column: 1 / -1; font-size: 10.5px; color: var(--tenue); }
+  /* v0.24: últimos 3 segundos de la cuenta regresiva */
+  #btnOleada.urge { border-color: var(--rojo); color: #ffd0c8; background: #3a1414; animation: latido .5s ease-in-out infinite alternate; }
+  @keyframes latido { from { filter: brightness(1); } to { filter: brightness(1.35); } }
+  @media (prefers-reduced-motion: reduce) { #btnOleada.urge { animation: none; } }
+  body.conJefe #aviso { top: 124px; }
 
   #acciones button {
     flex: 1; min-width: 0; height: 40px; border-radius: 8px; border: 1px solid var(--linea); background: #0b1220;
@@ -356,8 +361,8 @@
   })();
 </script>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.23.0"></script>
-<script src="juego.js?v=0.23.0"></script>
+<script src="datos.js?v=0.24.0"></script>
+<script src="juego.js?v=0.24.0"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
