@@ -290,7 +290,16 @@
   }
   // ── Partida en curso: se guarda sola cada vez que el campo queda limpio (al terminar una oleada) ──
   const CLAVE_PARTIDA = 'td_partida_v1';
+  // MODO PRUEBA (?prueba en la dirección): todo abierto, créditos iniciales, vida y premio ajustables,
+  // y nada se guarda (ni progreso, ni estadísticas, ni partida en curso).
+  const PRUEBA = /[?&]prueba/.test(location.search);
+  const AJ = { creditos: 20000, vida: 100, premio: 100 };
+  try { Object.assign(AJ, JSON.parse(localStorage.getItem('td_prueba') || '{}')); } catch (e) { /* nada */ }
+  const multPrueba = k => PRUEBA ? AJ[k] / 100 : 1;
+  const premioDe = e => Math.max(0, Math.round(e.def.premio * multPrueba('premio')));
+
   function guardarPartida() {
+    if (PRUEBA) return;
     if (G.fase !== 'jugando' || G.oleada === 0) return;
     const p = {
       v: 1, mapa: mapaId, modo, creditos: G.creditos, vidas: G.vidas, oleada: G.oleada, bajas: G.bajas,
@@ -315,7 +324,7 @@
     G.fase = 'jugando';
     G.creditos = p.creditos; G.vidas = p.vidas; G.oleada = p.oleada; G.bajas = p.bajas || 0;
     G.est = Object.assign(estNueva(), p.est || {});
-    G.vistos = {};
+    G.vistos = {}; G.avisoCombo = (p.torres || []).length > 1;
     G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0; G.pendientes = {};
     G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = true; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null; G.t = 0;
@@ -339,6 +348,7 @@
   }
 
   function guardar() {
+    if (PRUEBA) return;
     try { localStorage.setItem(CLAVE, JSON.stringify(G.guardado)); } catch (e) { /* sin almacenamiento: se juega igual */ }
   }
 
@@ -368,13 +378,13 @@
   function nuevaPartida() {
     borrarPartida();
     G.fase = 'jugando';
-    G.creditos = D.inicio.creditos;
+    G.creditos = PRUEBA ? AJ.creditos : D.inicio.creditos;
     G.vidas = D.inicio.vidas;
     G.oleada = 0; G.generando = false; G.salidas = []; G.bonoPend = {}; G.rutaSig = 0;
     G.cuenta = 0; G.enCuenta = false; G.pendientes = {};
     G.torres = []; G.enemigos = []; G.efectos = []; G.proyectiles = []; G.enlaces = []; G.minas = [];
     G.pausa = false; G.tipoSel = null; G.puntoSel = null; G.torreSel = null; G.moviendo = null;
-    G.bajas = 0; G.t = 0; G.vistos = {}; colaImp = []; impHasta = 0;
+    G.bajas = 0; G.t = 0; G.vistos = {}; G.avisoCombo = false; colaImp = []; impHasta = 0;
     G.est = estNueva();
     G.guardado.partidas++;
     guardar();
@@ -497,6 +507,12 @@
       }
     }
     for (const t of G.torres) calcular(t);   // los bonos dependen de las vecinas
+    // Primer combo de la partida: aviso largo que explica qué es
+    const nuevo = G.enlaces.find(en => !en.trio && !(en.clave in previas));
+    if (nuevo && !G.avisoCombo && G.fase === 'jugando') {
+      G.avisoCombo = true;
+      aviso('¡Combo ' + nuevo.sg.nombre + '! Dos torres pegadas que combinan cargan juntas un ataque especial, sin necesitar mejoras.', true);
+    }
   }
   // Fusiones cuya receta es este trío de tipos (sin importar el orden)
   const firma = tipos => tipos.slice().sort().join('+');
@@ -505,7 +521,7 @@
     return (D.fusiones || []).filter(sg => firma(sg.entre) === f);
   }
   // Una torre combo está desbloqueada si ya se fusionó alguna vez (o si datos.js abre todo para pruebas)
-  const desbloqueada = tipo => !!(D.desbloquearTodo || (G.guardado.desbloqueadas || {})[tipo]);
+  const desbloqueada = tipo => !!(D.desbloquearTodo || PRUEBA || (G.guardado.desbloqueadas || {})[tipo]);
   // El trío está listo para fusionar cuando las tres torres tienen todas sus mejoras
   const listoFusion = en => en.torres.every(t => t.nivel >= maxMejoras(t.tipo));
   function fusionar(en) {
@@ -712,7 +728,7 @@
   // Multiplicador extra de vida: refuerzo desde cierta oleada y, en modo infinito, crecimiento acumulado
   function multVida(n) {
     const r = D.oleada.refuerzo, inf = D.infinito;
-    let m = 1 + (MAPA.vidaExtra || 0);   // dificultad extra fija del escenario (0.10 = +10% de vida)
+    let m = (1 + (MAPA.vidaExtra || 0)) * multPrueba('vida');   // dificultad extra fija del escenario (0.10 = +10% de vida)
     if (r && n >= r.desde) {
       // curva cuadrática: "extra" en la oleada "desde" y "extraEn" en la oleada "hasta"; después sigue creciendo
       const c = r.hasta > r.desde ? ((r.extraEn || r.extra) - r.extra) / ((r.hasta - r.desde) * (r.hasta - r.desde)) : 0;
@@ -801,16 +817,17 @@
     G.est.dano[fuente || 'otro'] = (G.est.dano[fuente || 'otro'] || 0) + ef;
     e.vida -= d;
     if (e.vida <= 0) {
-      G.creditos += e.def.premio;
-      G.est.ganado += e.def.premio;
+      const premio = premioDe(e);
+      G.creditos += premio;
+      G.est.ganado += premio;
       G.est.bajasTipo[e.tipo] = (G.est.bajasTipo[e.tipo] || 0) + 1;
       if (e.def.jefe) G.est.jefes++;
       G.bajas++;
       G.guardado.bajasTotales++;
       SON.sfx(e.def.jefe ? 'grande' : e.tipo === 'blindado' || e.tipo === 'dron' ? 'explosion' : 'muerte', e.def.jefe || e.tipo === 'blindado' || e.tipo === 'dron' ? 0.6 : 1);
-      if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡' + e.def.nombre + ' destruido! +' + e.def.premio + 'cr'); }
+      if (e.def.jefe) { G.efectos.push({ k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.9, e: 3 }); aviso('¡' + e.def.nombre + ' destruido! +' + premio + 'cr'); }
       else G.efectos.push(e.tipo === 'blindado' || e.tipo === 'dron' ? { k: 'explosion', x: e.x, y: e.y, t: 0, dur: 0.4 } : { k: 'polvo', x: e.x, y: e.y, t: 0, dur: 0.3 });
-      flotar(e.x, e.y - 10, '+' + e.def.premio);
+      flotar(e.x, e.y - 10, '+' + premio);
       if (e.def.cria) soltarCrias(e);
       resolverEnemigo(e);
     }
@@ -1408,7 +1425,7 @@
     alcance: { ametralladora: 0xffffff, crio: 0xdff6ff, plasma: 0xe9dcff, misiles: 0xffe9c9, minas: 0xf3e6b8, laser: 0xffd9d9, rayo: 0xfff7c2, rotativo: 0xffffff, glacial: 0xdff6ff, domo: 0xffe9c9, reactor: 0xffd9f3, nucleo: 0xdff6ff, artilleria: 0xffe9c9, tesla: 0xfff7c2, prismatico: 0xffd9d9, minero: 0xf3e6b8, criobomba: 0xdff6ff }
   };
   const ANCHO_CAMINO = 24;
-  let escena = null, gDin = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
+  let txtPrev = null, escena = null, gDin = null, gFondo = null, txtEntradas = [], txtBase = null, TM = null;
   let flotantes = [];
 
   // Números "al azar" repetibles: el terreno sale igual en cada partida
@@ -2358,6 +2375,7 @@
     }
 
     // Lugar elegido para construir: muestra alcance, combos que se activarían y la torre "fantasma"
+    if (txtPrev && !(G.puntoSel && G.tipoSel)) txtPrev.setVisible(false);
     if (G.puntoSel && G.tipoSel) {
       const { x, y, ok } = G.puntoSel, def = D.torres[G.tipoSel];
       // Zona de combo de las torres cercanas que combinan con la que se va a construir
@@ -2368,13 +2386,25 @@
         }
       }
       marcarAlcance(g, x, y, def.alcance, G.tipoSel);
+      let nomPrev = [];
       if (ok) {
         for (const t of G.torres) {
-          if (contiguas({ x, y }, t) && sinergiaDe(G.tipoSel, t.tipo).length) enlace(g, x, y, t.x, t.y, 0.9);
+          if (t === G.moviendo) continue;
+          if (contiguas({ x, y }, t) && sinergiaDe(G.tipoSel, t.tipo).length) {
+            enlace(g, x, y, t.x, t.y, 0.9);
+            for (const sg of sinergiaDe(G.tipoSel, t.tipo)) if (!nomPrev.includes(sg.nombre)) nomPrev.push(sg.nombre);
+          }
         }
         g.lineStyle(2, 0xffffff, 0.9).strokeRoundedRect(x - 18, y - 18, 36, 36, 7);
       }
       dibujarTorre(g, { tipo: G.tipoSel, x, y, ang: -Math.PI / 2, nivel: 0 }, 0.7);
+      if (txtPrev) {
+        if (nomPrev.length) {
+          txtPrev.setText('+ ' + nomPrev.join(' · '));
+          const mw = txtPrev.width / 2 + 4;
+          txtPrev.setPosition(Math.max(mw, Math.min(W - mw, x)), y < 40 ? y + 36 : y - 21).setOrigin(0.5, y < 40 ? 0 : 1).setVisible(true);
+        } else txtPrev.setVisible(false);
+      }
       if (!ok) {
         g.fillStyle(0xe5342a, 0.45).fillRoundedRect(x - 17, y - 17, 34, 34, 6);
         g.lineStyle(2.5, 0xffffff, 0.95).lineBetween(x - 8, y - 8, x + 8, y + 8).lineBetween(x + 8, y - 8, x - 8, y + 8);
@@ -2507,6 +2537,39 @@
   // ── Zoom del mapa: pellizcar con dos dedos, rueda del mouse o botones + / −. Con zoom, un dedo arrastra el mapa ──
   const ZMAX = 2.5;
   let zoomMapa = 1;
+
+  // LUPA (teléfono): mientras el dedo ubica o arrastra una torre, una segunda cámara muestra ampliado el
+  // lugar elegido arriba del dedo (o al costado si no cabe), para ver lo que el dedo tapa.
+  let lupaCam = null;
+  function mostrarLupa(p) {
+    if (!lupaCam || !G.puntoSel) return ocultarLupa();
+    const cam = escena.cameras.main, lienzo = juego.canvas, r = lienzo.getBoundingClientRect();
+    if (!r.width) return;
+    const k = (W * ESC) / r.width;                    // px del juego por px de pantalla
+    const tam = 124 * k, sep = 92 * k, ancho = W * ESC, alto = H * ESC;
+    let cx = p.x, cy = p.y - sep - tam / 2;
+    if (cy - tam / 2 < 0) {                           // sin espacio arriba: al costado del dedo
+      cy = Math.max(tam / 2, Math.min(alto - tam / 2, p.y));
+      cx = p.x + sep + tam / 2 <= ancho ? p.x + sep + tam / 2 : p.x - sep - tam / 2;
+    }
+    cx = Math.max(tam / 2, Math.min(ancho - tam / 2, cx));
+    lupaCam.setViewport(Math.round(cx - tam / 2), Math.round(cy - tam / 2), Math.round(tam), Math.round(tam));
+    lupaCam.setZoom(Math.max(cam.zoom * 1.8, ESC * 2));
+    lupaCam.centerOn(G.puntoSel.x, G.puntoSel.y);
+    lupaCam.setVisible(true);
+    const mar = $('lupa');
+    if (mar) {
+      mar.style.left = (r.left + (cx - tam / 2) / k) + 'px'; mar.style.top = (r.top + (cy - tam / 2) / k) + 'px';
+      mar.style.width = mar.style.height = (tam / k) + 'px';
+      mar.classList.toggle('mal', !G.puntoSel.ok);
+      mar.hidden = false;
+    }
+  }
+  function ocultarLupa() {
+    if (lupaCam) lupaCam.setVisible(false);
+    const mar = $('lupa'); if (mar) mar.hidden = true;
+  }
+  const esDedo = p => !!(p && (p.wasTouch || (p.event && p.event.pointerType === 'touch')));
   // Cambia el zoom dejando fijo el punto del mapa que está bajo (sx, sy) en la pantalla del juego
   function fijarZoom(z, sx, sy) {
     if (!escena) return;
@@ -2542,6 +2605,9 @@
       txtBase = this.add.text(0, 0, 'BASE', estilo).setOrigin(1, 0).setResolution(resTxt());
       pintarMapa();
       gDin = this.add.graphics().setDepth(2);
+      txtPrev = this.add.text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '10px', fontStyle: 'bold', color: '#ffd23f', stroke: '#2a1a05', strokeThickness: 3 })
+        .setOrigin(0.5, 1).setDepth(3).setResolution(resTxt(2)).setVisible(false);
+      lupaCam = this.cameras.add(0, 0, 10, 10).setVisible(false).setBackgroundColor('#0b0f14');
       this.input.mouse && this.input.mouse.disableContextMenu();
       // Toques: al construir o mover, tocar ubica la torre y arrastrar la acomoda (como siempre).
       // En otro caso, el toque se resuelve al soltar: si el dedo no se movió es un toque normal; si se movió
@@ -2553,12 +2619,13 @@
       this.input.on('pointerdown', p => {
         if (dosDedos()) {
           const a = p1(), b = p2();
+          ocultarLupa();
           pinza = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: zoomMapa };
           toque = null; arrastre = false;
           return;
         }
         const pt = cam.getWorldPoint(p.x, p.y);
-        if (G.tipoSel || G.moviendo) { arrastre = tocarMapa(pt.x, pt.y); toque = null; return; }
+        if (G.tipoSel || G.moviendo) { arrastre = tocarMapa(pt.x, pt.y); toque = null; if (arrastre && esDedo(p)) mostrarLupa(p); return; }
         toque = { x: p.x, y: p.y, sx: cam.scrollX, sy: cam.scrollY, movio: false };
       });
       this.input.on('pointermove', p => {
@@ -2571,7 +2638,8 @@
         if (arrastre) {
           if (!p.isDown || !G.tipoSel || G.fase !== 'jugando') return;
           const pt = cam.getWorldPoint(p.x, p.y);
-          G.puntoSel = ajustar(pt.x, pt.y);
+          G.puntoSel = G.moviendo ? ajustarMover(pt.x, pt.y) : ajustar(pt.x, pt.y);
+          if (esDedo(p)) mostrarLupa(p);
           return;
         }
         if (toque && p.isDown) {
@@ -2581,6 +2649,7 @@
         }
       });
       this.input.on('pointerup', p => {
+        ocultarLupa();
         if (pinza) { if (!dosDedos()) pinza = null; toque = null; arrastre = false; return; }
         if (toque && !toque.movio) {
           const pt = cam.getWorldPoint(p.x, p.y);
@@ -2634,6 +2703,7 @@
     if (G.fase !== 'jugando') return false;
     let colocando = false;
     const t = torreEn(x, y);
+    if (G.pausa) { G.torreSel = t || null; refrescarTodo(); return false; }
     if (G.moviendo) { G.puntoSel = ajustarMover(x, y); return true; }
     if (t) { G.torreSel = t; G.puntoSel = null; G.tipoSel = null; }
     else if (G.tipoSel) { G.puntoSel = ajustar(x, y); G.torreSel = null; colocando = true; }
@@ -2683,7 +2753,7 @@
       b.className = 'torre' + (abierta ? '' : ' bloq'); b.dataset.tipo = tipo;
       b.innerHTML = (abierta ? ICONO[tipo] : ICONO.candado) + '<span class="tn">' + def.corto + '</span><span class="tc">' + (abierta ? cr(def.costo) + 'cr' : '?') + '</span>';
       b.addEventListener('click', () => {
-        if (G.fase !== 'jugando') return;
+        if (G.fase !== 'jugando' || bloqueadoPausa()) return;
         if (G.moviendo) { G.moviendo = null; G.puntoSel = null; }
         if (!abierta) { aviso('Se desbloquea fusionando ' + def.receta.map(x => D.torres[x].corto).join(' + ') + ' con todas sus mejoras'); return; }
         G.tipoSel = G.tipoSel === tipo && !G.puntoSel ? null : tipo;
@@ -2694,7 +2764,7 @@
     }
     const b = document.createElement('button');
     b.className = 'torre cambio';
-    b.innerHTML = filaCombo ? ICONO.flecha + '<span class="tn">Volver</span><span class="tc">&nbsp;</span>' : ICONO.estrella + '<span class="tn">Combo</span><span class="tc">★</span>';
+    b.innerHTML = filaCombo ? ICONO.flecha + '<span class="tn">Volver</span><span class="tc">&nbsp;</span>' : ICONO.estrella + '<span class="tn">Fusión</span><span class="tc">★</span>';
     b.addEventListener('click', () => { filaCombo = !filaCombo; G.tipoSel = null; G.puntoSel = null; armarBotonesTorre(); refrescarTodo(); });
     cont.appendChild(b);
   }
@@ -2783,7 +2853,7 @@
 
     if (G.torreSel) {
       const t = G.torreSel, def = D.torres[t.tipo];
-      poner(tit, 'textContent', def.nombre + (def.combo ? ' · TORRE COMBO' : t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
+      poner(tit, 'textContent', def.nombre + (def.combo ? ' · TORRE DE FUSIÓN' : t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
       if (!def.combo) refrescarAtributos(t);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
@@ -2809,7 +2879,7 @@
         poner(bM, 'disabled', falta > 0 || G.creditos < dF.costo);
         tSin = 'Trío para ' + dF.nombre + ' (consume las tres torres) · ' + tSin;
       }
-      if (def.combo) tSin = 'Torre combo: no tiene mejoras ni forma combos.';
+      if (def.combo) tSin = 'Torre de fusión: no tiene mejoras ni forma combos.';
       if (def.berserk) tSin = (t.berserk ? 'Berserk: ' + def.berserk.nombre + ' ' + Math.floor(Math.min(1, t.bCarga) * 100) + '%' : 'Berserk: faltan ' + (maxMejoras(t.tipo) - t.nivel) + ' mejoras') + ' · ' + tSin;
       vV = true; vP = !!t.s.arma && t.s.arma !== 'mina' && t.s.arma !== 'laser';   // minas y láser no eligen objetivo
       vMo = true;
@@ -2847,6 +2917,9 @@
       poner(tit, 'textContent', G.oleada === 0 ? 'Prepara tu defensa' : 'Sin selección');
       poner(det, 'textContent', 'Elige una torre de arriba y toca el lugar donde la quieres. Toca una torre ya construida para mejorar sus atributos o venderla.');
     }
+    const enPausa = G.pausa && G.fase === 'jugando';
+    $('panel').classList.toggle('pausado', enPausa);
+    if (enPausa) tSin = 'En pausa: puedes revisar tus torres, pero para construir, mejorar, mover o vender toca ▶ Continuar.';
     poner(sin, 'textContent', tSin);
     mostrar(bC, vC); mostrar(bX, vX); mostrar(bP, vP); mostrar(bV, vV); mostrar(bM, vM); mostrar(bMo, vMo);
     mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel && !D.torres[G.torreSel.tipo].combo);
@@ -2883,6 +2956,20 @@
 
   function refrescarTodo() { if (!listo) return; refrescarHud(); refrescarPanel(); }
 
+  // En pausa no se construye, mejora, vende, mueve ni fusiona: se suelta lo que se estaba ubicando
+  function pausar() {
+    if (G.fase !== 'jugando') return;
+    G.pausa = true;
+    if (G.moviendo) G.torreSel = G.moviendo;
+    G.moviendo = null; G.tipoSel = null; G.puntoSel = null;
+    ocultarLupa();
+  }
+  const bloqueadoPausa = () => {
+    if (!(G.pausa && G.fase === 'jugando')) return false;
+    aviso('En pausa no se puede construir ni mejorar. Toca ▶ Continuar.');
+    return true;
+  };
+
   let tAviso = 0;
   // Avisos cortos (1,8 s). Los importantes (presentación de un atacante especial) duran más, pueden ocupar
   // dos líneas, no los tapan los avisos cortos y, si llegan varios juntos, se muestran uno tras otro.
@@ -2909,7 +2996,7 @@
   let mapaElegido = null;
   const mapaAbierto = id => {
     const m = D.mapas[id];
-    return !!m && (D.desbloquearTodo || requisitos(m).every(r => !!G.guardado.completados[r]));
+    return !!m && (D.desbloquearTodo || PRUEBA || requisitos(m).every(r => !!G.guardado.completados[r]));
   };
   // "requiere" puede ser un escenario o una lista de escenarios
   const requisitos = m => !m.requiere ? [] : Array.isArray(m.requiere) ? m.requiere : [m.requiere];
@@ -2932,6 +3019,21 @@
 
   // Selector de modo: campaña (con final) o infinito (hasta perder)
   let modoElegido = 'campana';
+  // Casillas del modo prueba
+  function pintarPrueba() {
+    const cont = $('veloPrueba');
+    if (!cont) return;
+    cont.hidden = false;
+    $('prCreditos').value = AJ.creditos; $('prVida').value = AJ.vida; $('prPremio').value = AJ.premio;
+  }
+  function leerCasillasPrueba() {
+    const num = (id, min, max, def) => { const v = Math.round(Number($(id).value)); return isFinite(v) && $(id).value !== '' ? Math.max(min, Math.min(max, v)) : def; };
+    AJ.creditos = num('prCreditos', 0, 999999, 20000);
+    AJ.vida = num('prVida', 10, 1000, 100);
+    AJ.premio = num('prPremio', 0, 1000, 100);
+    try { localStorage.setItem('td_prueba', JSON.stringify(AJ)); } catch (e) { /* nada */ }
+  }
+
   function pintarModos() {
     const cont = $('veloModos'), m = D.mapas[mapaElegido] || MAPA, rec = G.guardado.recordInfinito[mapaElegido] || 0;
     cont.innerHTML = '';
@@ -3003,14 +3105,15 @@
   function mostrarMenu() {
     const g = G.guardado;
     $('veloTitulo').textContent = D.nombre;
-    $('veloSub').textContent = 'Elige un escenario';
+    $('veloSub').textContent = PRUEBA ? 'MODO PRUEBA · elige un escenario' : 'Elige un escenario';
+    if (PRUEBA) pintarPrueba();
     mapaElegido = mapaId; modoElegido = modo;
     pintarSelector(); pintarModos(); pintarLore();
     $('veloDatos').innerHTML = g.partidas
       ? '<div><b>' + cr(g.bajasTotales) + '</b><span>enemigos eliminados</span></div><div><b>' + g.victorias + '</b><span>victorias</span></div><div><b>' + (g.victorias ? g.mejorVidas : '—') + '</b><span>mejor resultado (vidas)</span></div>'
       : '<p>Defiende la base. Ubica torres en cualquier lugar del campo y ponlas pegadas entre sí: cargan un combo, un ataque especial que se dispara solo.</p>';
     $('veloBoton').textContent = 'Jugar';
-    const p = leerPartida();
+    const p = PRUEBA ? null : leerPartida();
     mostrar($('veloContinuar'), !!p);
     if (p) $('veloContinuar').textContent = '▶ Continuar: ' + D.mapas[p.mapa].nombre + (p.modo === 'infinito' ? ' (infinito)' : '') + ' · oleada ' + p.oleada;
     $('velo').hidden = false;
@@ -3093,10 +3196,10 @@
       '<h3>Objetivo de la torre</h3><p>En las torres que disparan puedes elegir a quién apuntan: <b>Primero</b> (el más avanzado), <b>Más fuerte</b> (el de más vida) o <b>Más rápido</b>.</p>' +
       '<h3>Oleadas y modos</h3><p><b>Campaña:</b> ' + total + ' oleadas, con un jefe cada ' + cada + ' y el jefe final en la última. <b>Infinito:</b> las oleadas no terminan y cada vez son más duras; el objetivo es llegar lo más lejos posible y superar tu récord. El modo se elige en la pantalla de inicio.</p><p>Al limpiar una oleada empieza una cuenta de ' + o.esperaSeg + ' segundos; si la adelantas, ganas ' + o.bonoAdelantoPorSeg + ' créditos por cada segundo que ahorres.</p><p><b>Adelantar con enemigos en el mapa:</b> puedes llamar la siguiente oleada aunque la actual siga en curso, hasta tener ' + o.maxEnJuego + ' oleadas en juego a la vez. Cada llamada da ' + o.bonoPorEnJuego + ' créditos por cada oleada que ya estaba en juego, y se cobran al limpiar la oleada que llamaste.</p>' +
       '<h3>Créditos</h3><p>Ganas créditos por cada enemigo eliminado y un bono al limpiar cada oleada, que crece con el número de oleada.</p>' +
-      '<h3>Combos</h3><p>Dos torres pegadas forman un combo: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>.</p>' +
+      '<h3>Combos</h3><p>Dos torres pegadas forman un combo desde el nivel 0: un bono permanente y un ataque especial que se dispara solo. Están todos en la pestaña <b>Combos</b>. Las <b>fusiones</b> (botón ★ Fusión) son otra cosa: tres torres al máximo en triángulo; ver pestaña <b>Fusión</b>.</p>' +
       '<h3>Zoom</h3><p>Pellizca el mapa con dos dedos (o usa la rueda del mouse, o los botones <b>+</b> y <b>−</b> a la derecha) para acercarte. Con zoom, arrastra un dedo para moverte por el mapa. Al construir o mover una torre, arrastrar acomoda la torre y no el mapa.</p>' +
       '<h3>Sonido</h3><p>El botón del parlante, en la barra de arriba, silencia o activa todo. En la pantalla de inicio puedes apagar por separado la <b>música</b> o los <b>efectos</b>. La música se intensifica durante el combate y cuando hay un jefe.</p>' +
-      '<h3>Controles</h3><p>En pausa, <b>⌂ Inicio</b> vuelve a la pantalla de inicio; la partida queda guardada desde la última oleada limpiada y se retoma con <b>Continuar</b>. <b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes seguir construyendo y aparece el botón para reiniciar la partida.</p>';
+      '<h3>Controles</h3><p>En pausa, <b>⌂ Inicio</b> vuelve a la pantalla de inicio; la partida queda guardada desde la última oleada limpiada y se retoma con <b>Continuar</b>. <b>×1 / ×2 / ×3</b> cambia la velocidad. <b>II</b> pausa: en pausa puedes revisar tus torres y leer el manual, pero no construir, mejorar, mover ni vender; aparece también el botón para reiniciar la partida.</p>';
   }
 
   function textoBerserk(tipo) {
@@ -3160,7 +3263,7 @@
     return t;
   }
   function manualCombos() {
-    let h = '<h3>Cómo funcionan</h3><ul><li>Dos torres <b>pegadas</b> forman un combo. Al ubicar una torre, las vecinas con las que combina muestran un círculo dorado punteado: si la sueltas dentro, hay combo.</li>' +
+    let h = '<h3>Cómo funcionan</h3><ul><li>Dos torres <b>pegadas</b> forman un combo <b>desde el nivel 0</b>, sin comprar mejoras (las mejoras solo lo hacen pegar más fuerte). No confundir con la <b>fusión</b>, que es otra cosa (pestaña Fusión). Al ubicar una torre, las vecinas con las que combina muestran un círculo dorado punteado: si la sueltas dentro, hay combo.</li>' +
       '<li>Entre las dos torres aparece un <b>círculo que se llena</b> mientras alguna tiene enemigos a tiro. Al llenarse, el ataque especial sale solo.</li>' +
       '<li>Además, una de las torres recibe un <b>bono permanente</b>.</li>' +
       '<li>Una torre con varias vecinas <b>reparte su carga</b>: con dos combos, cada uno tarda el doble.</li>' +
@@ -3176,11 +3279,11 @@
   }
 
   function manualTrios() {
-    let h = '<h3>Torres combo (fusión)</h3><ul><li>Tres torres <b>pegadas entre sí, en triángulo</b>, cuyos tipos sean la receta de una torre combo forman un trío. Cada una muestra un <b>triangulito magenta</b> en su esquina, que se llena a medida que mejoras las tres; cuando late en blanco, ya se pueden fusionar.</li>' +
+    let h = '<h3>Torres de fusión</h3><ul><li>No confundir con los <b>combos</b>: un combo son dos torres pegadas y funciona desde el nivel 0. La fusión es otra cosa: tres torres <b>pegadas entre sí, en triángulo</b>, cuyos tipos sean la receta de una torre de fusión, forman un trío. Cada una muestra un <b>triangulito magenta</b> en su esquina, que se llena a medida que mejoras las tres; cuando late en blanco, ya se pueden fusionar.</li>' +
       '<li>Cuando las tres tienen <b>todas sus mejoras</b>, toca cualquiera de ellas: aparece el botón <b>Fusionar</b>.</li>' +
-      '<li>La fusión <b>consume las tres torres</b> (no se devuelve nada) y además cuesta ' + dec(D.fusion.factorPrecio) + ' veces lo que valen las tres al máximo. La torre combo queda en el centro del triángulo.</li>' +
-      '<li>La primera fusión de cada una la <b>desbloquea para siempre</b>: en las partidas siguientes se construye directo desde el botón <b>★ Combo</b> de la barra de torres, al mismo precio.</li>' +
-      '<li>Las torres combo no tienen mejoras ni forman combos.</li></ul><h3>Las ' + (D.fusiones || []).length + ' torres combo</h3>';
+      '<li>La fusión <b>consume las tres torres</b> (no se devuelve nada) y además cuesta ' + dec(D.fusion.factorPrecio) + ' veces lo que valen las tres al máximo. La torre de fusión queda en el centro del triángulo.</li>' +
+      '<li>La primera fusión de cada una la <b>desbloquea para siempre</b>: en las partidas siguientes se construye directo desde el botón <b>★ Fusión</b> de la barra de torres, al mismo precio.</li>' +
+      '<li>Las torres de fusión no tienen mejoras ni forman combos.</li></ul><h3>Las ' + (D.fusiones || []).length + ' torres de fusión</h3>';
     for (const f of D.fusiones || []) {
       const def = D.torres[f.torre], abierta = desbloqueada(f.torre);
       h += '<div class="mcard combo"><div class="mcab">' + (abierta ? ICONO[f.torre] : ICONO.candado) + '<div><b>' + def.nombre + '</b><span>' + (abierta ? 'Desbloqueada' : 'Bloqueada') + ' · ' + cr(def.costo) + ' créditos</span></div></div>' +
@@ -3221,7 +3324,7 @@
     for (const b of $('manualTabs').children) b.classList.toggle('sel', b.dataset.tab === manualTab);
   }
   function abrirManual(tab) {
-    if (G.fase === 'jugando') G.pausa = true;   // el juego queda en pausa mientras lees
+    pausar();   // el juego queda en pausa mientras lees
     if (tab) manualTab = tab;
     pintarManual();
     $('manual').hidden = false;
@@ -3259,12 +3362,14 @@
 
   function conectarBotones() {
     $('veloBoton').addEventListener('click', () => {
+      if (PRUEBA) { leerCasillasPrueba(); pintarPrueba(); }
       $('velo').hidden = true;
       modo = modoElegido === 'infinito' ? 'infinito' : 'campana';
       if (mapaElegido && mapaElegido !== mapaId && mapaAbierto(mapaElegido)) cargarMapa(mapaElegido);
       fijarTotal();
       G.guardado.mapa = mapaId; G.guardado.modo = modo;
       nuevaPartida();
+      if (PRUEBA) aviso('Modo prueba: ' + cr(AJ.creditos) + 'cr · vida ' + AJ.vida + '% · premio ' + AJ.premio + '% · no se guarda nada', true);
       vigilarLienzo();
     });
     $('btnOleada').addEventListener('click', () => { iniciarOleada(true); refrescarTodo(); });
@@ -3331,8 +3436,9 @@
         aviso('Partida reiniciada');
       }
     });
-    $('btnPausa').addEventListener('click', () => { if (G.fase === 'jugando') { G.pausa = !G.pausa; refrescarTodo(); } });
+    $('btnPausa').addEventListener('click', () => { if (G.fase === 'jugando') { if (G.pausa) G.pausa = false; else pausar(); refrescarTodo(); } });
     $('btnConstruir').addEventListener('click', () => {
+      if (bloqueadoPausa()) return;
       if (G.moviendo) {
         const t = G.moviendo;
         if (G.puntoSel && moverTorre(t, G.puntoSel.x, G.puntoSel.y)) { G.moviendo = null; G.tipoSel = null; G.puntoSel = null; G.torreSel = t; }
@@ -3348,18 +3454,20 @@
       G.moviendo = null; G.puntoSel = null; G.tipoSel = null; refrescarTodo();
     });
     $('btnMover').addEventListener('click', () => {
+      if (bloqueadoPausa()) return;
       const t = G.torreSel;
       if (!t || G.creditos < precioMover(t)) return;
       G.moviendo = t; G.tipoSel = t.tipo; G.puntoSel = null; G.torreSel = null;
       refrescarTodo();
     });
     for (const b of $('atributos').children) {
-      b.addEventListener('click', () => { if (G.torreSel && b.dataset.id) mejorar(G.torreSel, b.dataset.id); refrescarTodo(); });
+      b.addEventListener('click', () => { if (bloqueadoPausa()) return; if (G.torreSel && b.dataset.id) mejorar(G.torreSel, b.dataset.id); refrescarTodo(); });
     }
     $('btnPrioridad').addEventListener('click', () => { if (G.torreSel) cambiarPrioridad(G.torreSel); refrescarTodo(); });
-    $('btnVender').addEventListener('click', () => { if (G.torreSel) vender(G.torreSel); refrescarTodo(); });
+    $('btnVender').addEventListener('click', () => { if (bloqueadoPausa()) return; if (G.torreSel) vender(G.torreSel); refrescarTodo(); });
     // Botón de fusión (usa el botón btnMejorar, que no tenía otro uso)
     $('btnMejorar').addEventListener('click', () => {
+      if (bloqueadoPausa()) return;
       const t = G.torreSel;
       if (!t) return;
       const trios = G.enlaces.filter(en => en.trio && en.torres.includes(t));
@@ -3369,7 +3477,7 @@
     });
     // Si la app pasa a segundo plano, se pausa sola
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && G.fase === 'jugando') { G.pausa = true; refrescarTodo(); }
+      if (document.hidden && G.fase === 'jugando') { pausar(); refrescarTodo(); }
       SON.suspender(document.hidden);
       if (!document.hidden) vigilarLienzo();
     });
@@ -3443,5 +3551,5 @@
   }
 
   // Acceso para pruebas automáticas y para la consola del navegador
-  window.TD = { G, D, W, H, renderer: () => juego.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl', fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, vigilarLienzo, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
+  window.TD = { lupa: mostrarLupa, G, D, W, H, renderer: () => juego.renderer.type === Phaser.CANVAS ? 'canvas' : 'webgl', fijarZoom, cargarMapa, ponerModo: m => { modo = m; fijarTotal(); }, gruposDe, vigilarLienzo, multVida, construir, mejorar, mejoraSiguiente, vender, iniciarOleada, avanzar, nuevaPartida, torreEn, puedeConstruir, ajustar };
 })();

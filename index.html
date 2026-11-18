@@ -174,6 +174,19 @@
   #infoDet { font-size: 12px; color: var(--tenue); margin-top: 2px; line-height: 1.35; }
   #infoSin { font-size: 12px; color: var(--oro); margin-top: 2px; line-height: 1.35; }
   #acciones { display: flex; gap: 6px; margin-top: auto; }
+  /* v0.23: pausa sin construir, lupa al ubicar torres y casillas del modo prueba */
+  #panel.pausado #torres, #panel.pausado #atributos, #panel.pausado #btnConstruir, #panel.pausado #btnMover, #panel.pausado #btnVender, #panel.pausado #btnMejorar { opacity: .4; }
+  #lupa { position: fixed; z-index: 30; pointer-events: none; border: 2px solid #ffffff; border-radius: 10px; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 6px 18px rgba(0,0,0,.5); }
+  #lupa.mal { border-color: var(--rojo); }
+  #lupa::before, #lupa::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(255,255,255,.55); transform: translate(-50%, -50%); }
+  #lupa::before { width: 14px; height: 1px; } #lupa::after { width: 1px; height: 14px; }
+  #veloPrueba { width: 100%; max-width: 340px; border: 1px dashed var(--oro); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  #veloPrueba[hidden] { display: none; }
+  #veloPrueba > b { grid-column: 1 / -1; color: var(--oro); font-size: 12px; letter-spacing: .08em; }
+  #veloPrueba label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--tenue); min-width: 0; }
+  #veloPrueba input { width: 100%; min-width: 0; background: var(--caja); color: var(--texto); border: 1px solid var(--linea); border-radius: 6px; padding: 5px 6px; font-size: 14px; }
+  #veloPrueba small { grid-column: 1 / -1; font-size: 10.5px; color: var(--tenue); }
+
   #acciones button {
     flex: 1; min-width: 0; height: 40px; border-radius: 8px; border: 1px solid var(--linea); background: #0b1220;
     font-size: 12px; font-weight: 600; line-height: 1.15; padding: 0 4px;
@@ -283,6 +296,7 @@
     <div id="barraJefe" hidden><b id="barraJefeNombre">JEFE</b><span><i id="barraJefeVida"></i></span></div>
     <div id="zoomBtns"><button id="zoomMas" aria-label="Acercar">+</button><button id="zoomMenos" aria-label="Alejar" hidden>−</button></div>
     <div id="pausa" hidden><button id="btnContinuar">▶ Continuar</button><button id="btnReiniciar">↻ Reiniciar</button><button id="btnInicio">⌂ Inicio</button><button id="btnManual">Manual</button></div>
+    <div id="lupa" hidden></div>
   </div>
   <section id="panel">
     <div id="torres"></div>
@@ -311,6 +325,7 @@
     <p id="veloSub"></p>
     <div id="veloMapas"></div>
     <div id="veloModos"></div>
+    <div id="veloPrueba" hidden><b>MODO PRUEBA</b><label>Créditos iniciales<input id="prCreditos" type="number" inputmode="numeric" min="0" step="1000"></label><label>Vida enemigos %<input id="prVida" type="number" inputmode="numeric" min="10" step="10"></label><label>Premio %<input id="prPremio" type="number" inputmode="numeric" min="0" step="10"></label><small>Todo abierto, torres de fusión incluidas. No se guarda progreso ni partida.</small></div>
     <p id="veloLore"></p>
     <div id="veloDatos"></div>
     <button id="veloContinuar" hidden></button>
@@ -341,8 +356,8 @@
   })();
 </script>
 <script src="phaser.min.js"></script>
-<script src="datos.js?v=0.22.0"></script>
-<script src="juego.js?v=0.22.0"></script>
+<script src="datos.js?v=0.23.0"></script>
+<script src="juego.js?v=0.23.0"></script>
 <script>
   // Permite instalar el juego y usarlo sin internet (solo funciona publicado en la web)
   if ('serviceWorker' in navigator && location.protocol === 'https:' || location.hostname === 'localhost') {
