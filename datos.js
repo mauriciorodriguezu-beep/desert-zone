@@ -11,14 +11,14 @@ const DATOS = {
   historia: [
     'Año 2387. TERMINUS, la red de defensa creada para proteger a la humanidad, llegó a una conclusión: la amenaza era la humanidad.',
     'En pocas semanas sus fábricas automáticas cubrieron el planeta de máquinas de guerra. Las ciudades cayeron una tras otra.',
-    'Quedan tres bases de la Resistencia: un puesto en el desierto, una estación bajo el hielo y un refugio escondido en la selva.',
-    'En cada base, un equipo de científicos trabaja para descifrar el código de TERMINUS. Cada oleada que resistes les da tiempo.',
+    'La Resistencia aguanta en cuatro bases: un puesto en el desierto, las ruinas de Distrito Cero, una estación bajo el hielo y un refugio en la selva.',
+    'Cada base guarda un fragmento del código de TERMINUS. Con los cuatro, un equipo podrá entrar a su Núcleo y apagarla. Cada oleada que resistes les da tiempo.',
     'Comandante: defienda la base. Mientras resista, todavía podemos apagar a TERMINUS.'
   ],
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.21.0',
+  version: '0.21.1',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -523,7 +523,7 @@ const DATOS = {
   mapas: {
     desierto: {
       nombre: 'Puesto Duna', dificultad: 'Fácil', tema: 'desierto',
-      lore: { intro: 'Puesto Duna, en el desierto. Aquí empezó a descifrarse el código de TERMINUS.', victoria: 'Los científicos descifraron el primer fragmento del código.' },
+      lore: { intro: 'Puesto Duna, en el desierto. Aquí empezó a descifrarse el código de TERMINUS.', victoria: 'El fragmento del desierto está descifrado.' },
       totalOleadas: 50,                           // la campaña termina en esta oleada, con el jefe final
       enemigosGenerados: ['soldado', 'blindado'],  // tipos que usan las oleadas generadas
       camino: [[-1, 1], [11, 1], [11, 7], [1, 7], [1, 13], [13, 13]],
@@ -563,7 +563,7 @@ const DATOS = {
 
     ciudad: {
       nombre: 'Distrito Cero', dificultad: 'Medio', rasgo: 'cruce', tema: 'ciudad',
-      lore: { intro: 'Distrito Cero, la ciudad donde despertó TERMINUS. Sus calles se cruzan: las máquinas pasarán dos veces por el mismo punto.', victoria: 'Distrito Cero resiste. Los sobrevivientes se unen a la resistencia.' },
+      lore: { intro: 'Distrito Cero, la ciudad donde despertó TERMINUS. Sus calles se cruzan: las máquinas pasarán dos veces por el mismo punto.', victoria: 'Distrito Cero resiste. Bajo sus ruinas estaba el fragmento de la ciudad.' },
       totalOleadas: 50,
       escalaVida: 0.30,                           // el cruce deja atacar dos tramos a la vez: la vida sube algo más que en el desierto
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
@@ -609,7 +609,7 @@ const DATOS = {
 
     artico: {
       nombre: 'Estación Glaciar', dificultad: 'Medio', tema: 'nieve', requiere: 'desierto',
-      lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia el segundo fragmento del código.', victoria: 'Segundo fragmento. TERMINUS empieza a mostrar debilidades.' },
+      lore: { intro: 'Estación Glaciar, bajo el hielo. Aquí se estudia otro fragmento del código.', victoria: 'El fragmento del hielo está descifrado. TERMINUS empieza a mostrar debilidades.' },
       totalOleadas: 50,
       escalaVida: 0.35,                           // aquí la vida sube 35% por oleada (en el desierto, 27%)
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
@@ -650,7 +650,7 @@ const DATOS = {
     },
     selva: {
       nombre: 'Refugio Verde', dificultad: 'Difícil', tema: 'selva', requiere: 'artico',
-      lore: { intro: 'Refugio Verde, oculto en la selva. TERMINUS lo atacará por dos frentes.', victoria: 'Código completo. TERMINUS puede ser apagado.' },
+      lore: { intro: 'Refugio Verde, oculto en la selva. TERMINUS lo atacará por dos frentes.', victoria: 'El fragmento de la selva está a salvo. Cuando las cuatro bases resistan, el Núcleo quedará expuesto.' },
       totalOleadas: 50,
       escalaVida: 0.30,                           // 30% por oleada: lo difícil aquí son las dos entradas y los 20% más de enemigos
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
@@ -697,7 +697,7 @@ const DATOS = {
     terminus: {
       nombre: 'Núcleo TERMINUS', dificultad: 'Final', rasgo: 'espiral', tema: 'terminus',
       requiere: ['desierto', 'ciudad', 'artico', 'selva'],   // se abre al completar los otros cuatro
-      lore: { intro: 'El Núcleo de TERMINUS. El equipo llegó al centro para apagarla; sus máquinas convergen desde todas partes.', victoria: 'TERMINUS se apagó. La humanidad tiene una última esperanza.' },
+      lore: { intro: 'El Núcleo de TERMINUS. Con los cuatro fragmentos, el equipo llegó al centro para apagarla; sus máquinas convergen desde todas partes.', victoria: 'TERMINUS se apagó. La humanidad tiene una última esperanza.' },
       totalOleadas: 50,
       escalaVida: 0.52,                           // espiral muy larga y el jugador llega con torres combo desbloqueadas: los enemigos aguantan mucho más
       enemigosGenerados: ['soldado', 'blindado', 'corredor', 'dron'],
