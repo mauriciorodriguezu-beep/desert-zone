@@ -18,7 +18,7 @@ const DATOS = {
   historiaInfinito: 'TERMINUS no se detiene. ¿Cuánto tiempo puede resistir la base?',
   historiaDerrota: 'La base cayó. Los científicos lograron escapar: hay que volver a intentarlo.',
   autor: 'Mauricio Rodríguez',
-  version: '0.25.0',
+  version: '0.26.0',
 
   // true = todos los escenarios abiertos (para pruebas).
   // false = cada escenario se abre al completar el que indica su campo "requiere".
@@ -268,7 +268,7 @@ const DATOS = {
       nombre: 'Cañón rotativo', corto: 'Rotativo', combo: true,
       desc: 'Fusión de tres ametralladoras. Ráfaga continua que reparte sus disparos entre los 3 enemigos más avanzados. Perfora. Tierra y aire.',
       arma: 'bala', tipoDano: 'fisico', antiaerea: true, perforante: true,
-      dano: 30, cadencia: 0.1, alcance: 150, objetivos: 3,     // objetivos: a cuántos enemigos dispara a la vez
+      dano: 70, cadencia: 0.1, alcance: 170, objetivos: 3,     // objetivos: a cuántos enemigos dispara a la vez
       atributos: {}
     },
     glacial: {
@@ -289,7 +289,7 @@ const DATOS = {
       nombre: 'Reactor de fusión', corto: 'Reactor', combo: true,
       desc: 'Fusión de plasma, láser y rayo. Haz continuo muy potente que daña a todo en su línea y, cada 2 s, lanza un arco eléctrico que salta entre 6 enemigos. Tierra y aire.',
       arma: 'laser', tipoDano: 'energia', antiaerea: true, perforante: true,
-      danoSeg: 220, alcance: 200, ancho: 16, arcoCada: 2, arcoSaltos: 6, arcoDano: 150,
+      danoSeg: 380, alcance: 200, ancho: 16, arcoCada: 2, arcoSaltos: 6, arcoDano: 150,
       atributos: {}
     },
     nucleo: {
@@ -300,9 +300,9 @@ const DATOS = {
     },
     artilleria: {
       nombre: 'Artillería pesada', corto: 'Artillería', combo: true,
-      desc: 'Fusión de tres torres de misiles. Salvas de 8 misiles pesados de muy largo alcance, repartidos entre los enemigos a tiro, que aturden al estallar. Tierra y aire.',
+      desc: 'Fusión de tres torres de misiles. Salvas de 4 misiles pesados de largo alcance, repartidos entre los enemigos a tiro; el primero aturde al estallar. Tierra y aire.',
       arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 220,
-      dano: 160, radio: 70, cadencia: 2.5, alcance: 260, salva: 8, aturde: 0.8,
+      dano: 160, radio: 70, cadencia: 2.5, alcance: 190, salva: 4, aturde: 0.5, aturdePrimero: true,   // v0.26: era salva 8, alcance 260, aturdían los 8 (0,8 s)
       atributos: {}
     },
     tesla: {
@@ -316,7 +316,7 @@ const DATOS = {
       nombre: 'Láser prismático', corto: 'Prisma', combo: true,
       desc: 'Fusión de tres torres láser. Tres haces a la vez, cada uno hacia donde atraviesa más enemigos. Perfora. Tierra y aire.',
       arma: 'laser', tipoDano: 'energia', antiaerea: true, perforante: true,
-      danoSeg: 160, alcance: 220, ancho: 14, haces: 3,
+      danoSeg: 280, alcance: 220, ancho: 14, haces: 3,
       atributos: {}
     },
     minero: {
@@ -330,7 +330,7 @@ const DATOS = {
       nombre: 'Bombardero criogénico', corto: 'Bomba', combo: true,
       desc: 'Fusión de minadora, crío y misiles. Salvas de 3 bombas que congelan 2 s todo lo que alcanzan y dejan 2 minas donde estallan. Tierra y aire.',
       arma: 'misil', tipoDano: 'explosivo', antiaerea: true, velProyectil: 200,
-      dano: 180, radio: 80, cadencia: 2.0, alcance: 220, salva: 3, congelaImpacto: 2, minasImpacto: 2, danoMina: 150, radioMina: 40,
+      dano: 150, radio: 80, cadencia: 2.0, alcance: 220, salva: 2, congelaImpacto: 1.2, minasImpacto: 2, danoMina: 120, radioMina: 40,
       atributos: {}
     }
   },
@@ -450,7 +450,13 @@ const DATOS = {
      - La primera fusión desbloquea esa torre combo para siempre: en las partidas siguientes se puede
        construir directo desde la fila ★ de la barra de torres, al mismo precio.
      - "torre" es el tipo de la torre combo (está en "torres", con combo: true). */
-  fusion: { factorPrecio: 1.5 },
+  // factorPrecio: la torre de fusión cuesta 1,5 veces lo invertido en las tres torres al máximo.
+  // niveles (v0.26): las torres de fusión se pueden subir 3 niveles, caros. Cada nivel cuesta factorCosto × el precio
+  // de la torre y multiplica su daño (dano, danoSeg, arcoDano, danoMina) por "mult" respecto del valor base.
+  // Balance v0.26 (medido con una torre sola contra las oleadas 36–40): Artillería salva 8→4, alcance 260→190, aturde
+  // solo el primer misil 0,5 s; Bombardero criogénico salva 3→2, daño 180→150, mina 150→120, congela 2→1,2 s;
+  // Cañón rotativo daño 30→70, alcance 150→170; Láser prismático 160→280/s; Reactor 220→380/s.
+  fusion: { factorPrecio: 1.5, niveles: { factorCosto: [0.4, 0.6, 0.9], mult: [1.2, 1.4, 1.65] } },
   fusiones: [
     { id: 'rotativo', entre: ['ametralladora', 'ametralladora', 'ametralladora'], torre: 'rotativo' },
     { id: 'glacial',  entre: ['ametralladora', 'crio', 'plasma'],                 torre: 'glacial' },

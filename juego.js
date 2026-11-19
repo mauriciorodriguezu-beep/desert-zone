@@ -213,6 +213,17 @@
     d.receta = f.entre;
     d.costo = Math.round(D.fusion.factorPrecio * f.entre.reduce((s, x) => s + valorMax(x), 0) / 10) * 10;
     f.nombre = d.nombre;
+    // Niveles de la torre de fusión: caros, cada uno multiplica el daño base (el Núcleo criogénico sube su efecto)
+    const nf = D.fusion.niveles;
+    if (nf && !(d.atributos && d.atributos.nivelFusion)) {
+      const niveles = nf.mult.map((m, k) => {
+        const n = { costo: Math.round(d.costo * nf.factorCosto[k] / 50) * 50 };
+        for (const st of ['dano', 'danoSeg', 'arcoDano', 'danoMina']) if (d[st] != null) n[st] = Math.round(d[st] * m);
+        if (d.fragil != null) { n.fragil = Math.min(1, Math.round(d.fragil * m * 100) / 100); n.congela = Math.round(d.congela * m * 10) / 10; }
+        return n;
+      });
+      d.atributos = Object.assign({}, d.atributos, { nivelFusion: { nombre: 'Nivel', niveles } });
+    }
   }
 
   // Escenario en juego. cargarMapa() lo cambia: recalcula el camino y repinta el fondo.
@@ -1350,7 +1361,7 @@
         SON.sfx('misil');
         for (let i = 0; i < (s.salva || 1); i++) {
           const o = i === 0 || !(s.salva > 2) ? e : (otrosObjetivos(t, e, s.salva - 1)[i - 1] || e);   // salvas grandes reparten objetivos
-          G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: o.x, ty: o.y, obj: o, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: s.aturde || 0, torre: t, espera: i * 0.18, lado: i % 2 ? 1 : -1, multAire: s.multAire || 1, saltos: s.saltosImpacto || 0, congela: s.congelaImpacto || 0, minas: s.minasImpacto || 0 });
+          G.proyectiles.push({ k: 'misil', x: t.x, y: t.y, tx: o.x, ty: o.y, obj: o, vel: s.velProyectil, dano: s.dano, radio: s.radio, aturde: (s.aturdePrimero && i > 0) ? 0 : (s.aturde || 0), torre: t, espera: i * 0.18, lado: i % 2 ? 1 : -1, multAire: s.multAire || 1, saltos: s.saltosImpacto || 0, congela: s.congelaImpacto || 0, minas: s.minasImpacto || 0 });
         }
       }
       t.enfria += s.cadencia;
@@ -2862,7 +2873,7 @@
     if (tipo === 'glacial') return 'Daño ' + s.dano + ' · cada ' + dec(s.cadencia) + ' s · onda ' + s.onda + ' que congela ' + dec(s.congelaImpacto) + ' s · aura que ralentiza ' + Math.round(s.lento * 100) + '% · alcance ' + s.alcance;
     if (tipo === 'domo') return 'Salva de ' + s.salva + ' misiles de ' + s.dano + ' en radio ' + s.radio + ' · cada ' + dec(s.cadencia) + ' s · ×' + s.multAire + ' a aéreos · rayo de ' + s.saltosImpacto + ' saltos al estallar · alcance ' + s.alcance;
     if (tipo === 'nucleo') return 'Aura que ralentiza ' + Math.round(s.lento * 100) + '% · congela ' + dec(s.congela) + ' s cada ' + s.cadaSeg + ' s · fragilidad +' + Math.round(s.fragil * 100) + '% · alcance ' + s.alcance + ' · sin daño';
-    if (tipo === 'artilleria') return 'Salva de ' + s.salva + ' misiles de ' + s.dano + ' en radio ' + s.radio + ' · cada ' + dec(s.cadencia) + ' s · aturde ' + dec(s.aturde) + ' s · alcance ' + s.alcance;
+    if (tipo === 'artilleria') return 'Salva de ' + s.salva + ' misiles de ' + s.dano + ' en radio ' + s.radio + ' · cada ' + dec(s.cadencia) + ' s · el primer misil aturde ' + dec(s.aturde) + ' s · alcance ' + s.alcance;
     if (tipo === 'tesla') return 'Daño ' + s.dano + ' · salta ' + s.saltos + ' veces (−' + Math.round((1 - s.caida) * 100) + '% por salto) · cada ' + dec(s.cadencia) + ' s · aturde · alcance ' + s.alcance;
     if (tipo === 'prismatico') return s.haces + ' haces de ' + s.danoSeg + ' por segundo · ancho ' + s.ancho + ' · largo ' + s.alcance + ' · perforante';
     if (tipo === 'minero') return 'Minas de ' + s.dano + ' en radio ' + s.radio + ' · una cada ' + dec(s.cadencia) + ' s · hasta ' + s.maxMinas + ' · aturden · alcance ' + s.alcance;
@@ -2904,6 +2915,7 @@
     congelacion: s => s.congela ? dec(s.congela) + ' s' : 'no',
     cantidad: s => String(Math.floor(s.maxMinas)),
     potencia: s => dec(s.danoSeg) + '/s',
+    nivelFusion: s => s.dano != null ? 'daño ' + s.dano : s.danoSeg != null ? dec(s.danoSeg) + '/s' : s.fragil != null ? '+' + Math.round(s.fragil * 100) + '% daño' : '',
     haz: s => Math.round(s.ancho) + ' px',
     saltos: s => String(Math.round(s.saltos))
   };
@@ -2941,8 +2953,8 @@
 
     if (G.torreSel) {
       const t = G.torreSel, def = D.torres[t.tipo];
-      poner(tit, 'textContent', def.nombre + (def.combo ? ' · TORRE DE FUSIÓN' : t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
-      if (!def.combo) refrescarAtributos(t);
+      poner(tit, 'textContent', def.nombre + (def.combo ? ' · FUSIÓN · nivel ' + (t.niv.nivelFusion || 0) + '/' + maxMejoras(t.tipo) : t.berserk ? ' · BERSERK' : ' · mejoras ' + t.nivel + '/' + maxMejoras(t.tipo)));
+      refrescarAtributos(t);
       poner(det, 'textContent', textoStats(t.tipo, t.s));
       const mios = {};
       for (const en of G.enlaces) {
@@ -2967,7 +2979,7 @@
         poner(bM, 'disabled', falta > 0 || G.creditos < dF.costo);
         tSin = 'Trío para ' + dF.nombre + ' (consume las tres torres) · ' + tSin;
       }
-      if (def.combo) tSin = 'Torre de fusión: no tiene mejoras ni forma combos.';
+      if (def.combo) tSin = 'Torre de fusión: no forma combos. Se puede subir de nivel 3 veces (caro): cada nivel aumenta su daño.';
       if (def.berserk) tSin = (t.berserk ? 'Berserk: ' + def.berserk.nombre + ' ' + Math.floor(Math.min(1, t.bCarga) * 100) + '%' : 'Berserk: faltan ' + (maxMejoras(t.tipo) - t.nivel) + ' mejoras') + ' · ' + tSin;
       vV = true; vP = !!t.s.arma && t.s.arma !== 'mina' && t.s.arma !== 'laser';   // minas y láser no eligen objetivo
       vMo = true;
@@ -3010,7 +3022,7 @@
     if (enPausa) tSin = 'En pausa: puedes revisar tus torres, pero para construir, mejorar, mover o vender toca ▶ Continuar.';
     poner(sin, 'textContent', tSin);
     mostrar(bC, vC); mostrar(bX, vX); mostrar(bP, vP); mostrar(bV, vV); mostrar(bM, vM); mostrar(bMo, vMo);
-    mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel && !D.torres[G.torreSel.tipo].combo);
+    mostrar($('torres'), !G.torreSel); mostrar($('atributos'), !!G.torreSel);
 
     for (const b of document.querySelectorAll('#torres .torre[data-tipo]')) {
       const tipo = b.dataset.tipo;
@@ -3379,7 +3391,7 @@
       '<li>Cuando las tres tienen <b>todas sus mejoras</b>, toca cualquiera de ellas: aparece el botón <b>Fusionar</b>.</li>' +
       '<li>La fusión <b>consume las tres torres</b> (no se devuelve nada) y además cuesta ' + dec(D.fusion.factorPrecio) + ' veces lo que valen las tres al máximo. La torre de fusión queda en el centro del triángulo.</li>' +
       '<li>La primera fusión de cada una la <b>desbloquea para siempre</b>: en las partidas siguientes se construye directo desde el botón <b>★ Fusión</b> de la barra de torres, al mismo precio.</li>' +
-      '<li>Las torres de fusión no tienen mejoras ni forman combos.</li></ul><h3>Las ' + (D.fusiones || []).length + ' torres de fusión</h3>';
+      '<li>Las torres de fusión no forman combos, pero se pueden <b>subir de nivel 3 veces</b>, con una inversión grande: cada nivel cuesta ' + D.fusion.niveles.factorCosto.map(f => Math.round(f * 100) + '%').join(', ') + ' del precio de la torre y deja su daño en ' + D.fusion.niveles.mult.map(m => Math.round(m * 100) + '%').join(', ') + ' del original.</li></ul><h3>Las ' + (D.fusiones || []).length + ' torres de fusión</h3>';
     for (const f of D.fusiones || []) {
       const def = D.torres[f.torre], abierta = desbloqueada(f.torre);
       h += '<div class="mcard combo"><div class="mcab">' + (abierta ? ICONO[f.torre] : ICONO.candado) + '<div><b>' + def.nombre + '</b><span>' + (abierta ? 'Desbloqueada' : 'Bloqueada') + ' · ' + cr(def.costo) + ' créditos</span></div></div>' +
